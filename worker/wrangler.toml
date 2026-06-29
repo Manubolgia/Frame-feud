@@ -1,0 +1,18 @@
+name = "frame-feud"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# One Durable Object instance per room (keyed by room code via idFromName).
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# DOs with the WebSocket Hibernation API are available on the Workers free plan
+# (new SQLite-backed classes). This migration registers the class.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[observability]
+enabled = true
