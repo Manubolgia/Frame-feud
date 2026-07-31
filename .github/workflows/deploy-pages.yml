@@ -34,11 +34,15 @@ jobs:
       - name: Run determinism tests
         run: npm test
 
+      # Pages serves the site from https://<user>.github.io/<repo>/ and that
+      # path is CASE-SENSITIVE. Derive it from the real repository name rather
+      # than hardcoding it, so a rename or a capital letter can never break the
+      # asset URLs.
+      - name: Compute Pages base path
+        run: echo "VITE_BASE=/${GITHUB_REPOSITORY#*/}/" >> "$GITHUB_ENV"
+
       - name: Build
         env:
-          # Repo is served from https://<user>.github.io/<repo>/ — set the base
-          # path to your repository name (with leading + trailing slash).
-          VITE_BASE: /frame-feud/
           # Point the client at your deployed Cloudflare Worker (wss). Leave
           # empty to ship with online play disabled (local play still works).
           VITE_WS_URL: ${{ vars.VITE_WS_URL }}

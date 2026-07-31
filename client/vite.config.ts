@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages serves from /<repo>/. Override with VITE_BASE if your repo
-// name differs. Trailing slash required.
-const base = process.env.VITE_BASE ?? '/frame-feud/';
+// GitHub Pages serves from /<repo>/ and that path is case-sensitive, so this
+// must match the repository name exactly. CI overrides it via VITE_BASE,
+// derived from the real repo name. Trailing slash required.
+const base = process.env.VITE_BASE ?? '/Frame-feud/';
 
 export default defineConfig({
   base,

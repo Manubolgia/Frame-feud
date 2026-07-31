@@ -98,13 +98,18 @@ There are two independent pieces. **You can ship the game with just step 1**
 The repo includes `.github/workflows/deploy-pages.yml`, which builds `client/`
 and publishes it on every push to `main`.
 
-1. Push this repo to GitHub (you already have `manubolgia/frame-feud`).
+1. Push this repo to GitHub (you already have `Manubolgia/Frame-feud`).
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. The site deploys to `https://<your-user>.github.io/frame-feud/`.
+3. The site deploys to `https://<your-user>.github.io/<repo-name>/`.
 
-> The Vite `base` defaults to `/frame-feud/`. If your repo has a different name,
-> set the `VITE_BASE` env in the workflow (or a repo variable) to
-> `/<repo-name>/` — leading and trailing slash required.
+> **The Pages path is case-sensitive.** For this repo that means
+> `https://manubolgia.github.io/Frame-feud/` — a capital `F`. Visiting the
+> lowercase spelling returns a 404 from GitHub before the app ever loads.
+>
+> The workflow derives Vite's `base` from the actual repository name
+> (`/${GITHUB_REPOSITORY#*/}/`), so renaming the repo or changing its
+> capitalisation keeps working with no edits. Only the local-dev fallback in
+> `client/vite.config.ts` is hardcoded.
 
 ### 2) Online server → Cloudflare Worker
 
