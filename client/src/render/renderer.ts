@@ -67,11 +67,14 @@ export class Renderer {
     this.stage = stage;
   }
 
-  stageBounds(): Bounds {
+  /** `airX` is how much empty space to keep either side of the stage. On a
+   *  narrow portrait screen that air is what forces the zoom-out, so callers
+   *  pass a smaller value there to keep the fighters legible. */
+  stageBounds(airX = 3): Bounds {
     const s = this.stage!;
     return {
-      minX: -s.platforms[0].w / 1000 - 3,
-      maxX: s.platforms[0].w / 1000 + 3,
+      minX: -s.platforms[0].w / 1000 - airX,
+      maxX: s.platforms[0].w / 1000 + airX,
       minY: s.platforms.reduce((m, p) => Math.min(m, p.y / 1000), 0) - 4,
       maxY: s.platforms[0].y / 1000 + 2,
     };

@@ -21,8 +21,13 @@ export class Camera {
   shakeX = 0;
   shakeY = 0;
   /** Vertical framing bias as a fraction of viewH (>0 shifts action upward on
-   *  screen, leaving room for the planning panel at the bottom). */
+   *  screen). Used for small cosmetic nudges. */
   biasY = 0;
+  /** Screen pixels occluded by UI: the HUD cards on top, the planning panel
+   *  below. The camera fits the action into the clear band between them and
+   *  centres it there, so fighters are never drawn underneath either. */
+  insetBottom = 0;
+  insetTop = 0;
   private shakeMag = 0;
 
   screenW = 800;
@@ -49,12 +54,30 @@ export class Camera {
     const aspect = this.screenW / this.screenH;
     const w = Math.max(b.maxX - b.minX + padX * 2, 6);
     const h = Math.max(b.maxY - b.minY + padY * 2, 4);
-    // pick viewH so both fit
-    const viewHByH = h;
-    const viewHByW = w / aspect;
+
+    // Only the band between the HUD and the planning panel is really visible.
+    // Zoom to fit that band rather than the full canvas. Cap the total inset so
+    // a huge panel can't collapse the band to nothing.
+    const maxInset = this.screenH * 0.8;
+    let insetT = Math.max(0, this.insetTop);
+    let insetB = Math.max(0, this.insetBottom);
+    const total = insetT + insetB;
+    if (total > maxInset && total > 0) {
+      const k = maxInset / total;
+      insetT *= k;
+      insetB *= k;
+    }
+    const visH = Math.max(this.screenH - insetT - insetB, 1);
+
+    const viewHByH = (h * this.screenH) / visH; // fit height into the clear band
+    const viewHByW = w / aspect; // full width is never occluded
     this.tViewH = Math.max(viewHByH, viewHByW);
+
+    // Re-centre on the clear band: shift by half the *difference* of the two
+    // insets, converted from pixels into world units.
+    const shift = ((insetB - insetT) * this.tViewH) / (2 * this.screenH);
     this.tcx = (b.minX + b.maxX) / 2;
-    this.tcy = (b.minY + b.maxY) / 2 + this.biasY * this.tViewH;
+    this.tcy = (b.minY + b.maxY) / 2 + shift + this.biasY * this.tViewH;
   }
 
   addShake(mag: number) {

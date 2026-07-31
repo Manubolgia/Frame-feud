@@ -51,6 +51,7 @@ const I: Record<string, string> = {
   clear: `<path d="M4 8a8 8 0 1 1-1 4"/><path d="M3 4v5h5" fill="currentColor" stroke="none"/>`,
   undo: `<path d="M9 7L4 12l5 5"/><path d="M4 12h9a6 6 0 0 1 0 12H8" opacity=".9"/>`,
   dot: `<circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>`,
+  chevron_down: `<path d="M6 9l6 6 6-6"/>`,
 };
 
 export interface IconOpts {

@@ -25,7 +25,9 @@ export default defineConfig({
         theme_color: '#6c4cff',
         background_color: '#0c0c1a',
         display: 'standalone',
-        orientation: 'landscape',
+        // Portrait is a first-class layout (collapsible panel + inset-aware
+        // camera), so don't lock installed instances to landscape.
+        orientation: 'any',
         start_url: base,
         scope: base,
         icons: [

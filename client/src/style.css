@@ -552,10 +552,39 @@ code { background: #00000055; padding: 1px 6px; border-radius: 5px; color: var(-
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 56vh;
+  /* dvh tracks mobile browser chrome as it shows/hides; vh is the fallback */
+  max-height: 52vh;
+  max-height: 52dvh;
+  overflow: hidden;
   pointer-events: auto;
 }
 .plan-panel.hidden { display: none; }
+
+/* Collapsed: slim bar so the arena is fully visible. Clear/Undo/LOCK IN stay
+   reachable, so you can peek at the field and still commit without expanding. */
+.plan-panel.collapsed { max-height: none; }
+.plan-panel.collapsed .timeline-wrap,
+.plan-panel.collapsed .palette,
+.plan-panel.collapsed .aim-panel { display: none; }
+
+.collapse-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid #ffffff22;
+  background: #1a1936;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.18s ease;
+}
+.collapse-btn:active { background: #23224a; }
+.collapse-btn svg { display: block; }
+/* chevron points down to hide, flips up to reveal */
+.plan-panel.collapsed .collapse-btn { transform: rotate(180deg); }
+
 .plan-topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .plan-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .plan-pname { font-family: 'Russo One'; font-size: 18px; letter-spacing: 1px; }
@@ -604,7 +633,22 @@ code { background: #00000055; padding: 1px 6px; border-radius: 5px; color: var(-
 .aim-slider { flex: 1; }
 .aim-actions { display: flex; gap: 8px; }
 
-.palette { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+/* flex:1 + min-height:0 is what actually lets this scroll. Without them the
+   default min-height:auto refuses to shrink and the palette pushes the whole
+   panel past its max-height, swallowing the arena on tall phones. */
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* fade the cut edge so a half-clipped row reads as "scroll for more" */
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 18px), transparent);
+}
 .palette-group { display: flex; flex-direction: column; gap: 6px; }
 .group-label { font-size: 10px; letter-spacing: 2px; color: var(--ink-dim); }
 .move-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 7px; }
@@ -665,11 +709,49 @@ code { background: #00000055; padding: 1px 6px; border-radius: 5px; color: var(-
 }
 .lock-btn:active { transform: scale(0.98); }
 
-/* landscape phones: tighten */
+/* landscape phones: vertical space is scarce, so shrink both the HUD and the
+   panel — otherwise they meet in the middle and bury the fighters */
 @media (max-height: 480px) {
-  .plan-panel { max-height: 72vh; padding-top: 6px; }
+  .plan-panel { max-height: 48vh; max-height: 48dvh; padding-top: 6px; gap: 5px; }
   .move-glyph { font-size: 18px; }
-  .hud-dmg { font-size: 18px; }
+  .move-btn { padding: 5px 4px; }
+  .move-name { font-size: 11px; }
+  .collapse-btn { width: 36px; height: 36px; }
+  .plan-pname { font-size: 15px; }
+  .lock-btn { padding: 10px; font-size: 16px; }
+  .ctrl-btn { padding: 8px 11px; }
+  .timeline { min-height: 32px; }
+  /* compact HUD */
+  .hud { top: calc(env(safe-area-inset-top) + 4px); gap: 6px; }
+  .hud-card { padding: 3px 8px; min-width: 78px; border-width: 1.5px; }
+  .hud-dmg { font-size: 17px; }
+  .hud-name { font-size: 11px; }
+  .hud-char { font-size: 10px; }
+}
+
+/* portrait phones: the arena must keep its half of the screen */
+@media (max-width: 560px) and (orientation: portrait) {
+  .plan-panel {
+    max-height: 46vh;
+    max-height: 46dvh;
+    gap: 6px;
+    padding: 6px 10px calc(env(safe-area-inset-bottom) + 8px);
+  }
+  .move-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+  .move-btn { padding: 6px 4px; border-radius: 9px; }
+  .move-name { font-size: 11px; }
+  .move-meta { gap: 3px; }
+  .plan-pname { font-size: 15px; }
+  .plan-cname { font-size: 13px; }
+  .tl-label, .budget-label { display: none; }
+  .timeline { min-height: 34px; }
+  .ctrl-btn { padding: 9px 11px; letter-spacing: 0.5px; }
+  .lock-btn { padding: 12px; font-size: 16px; letter-spacing: 2px; }
+}
+
+/* very narrow: drop the archetype chip so the name + collapse button fit */
+@media (max-width: 400px) {
+  .plan-arch { display: none; }
 }
 @media (min-width: 760px) {
   .slot-grid { grid-template-columns: repeat(4, 1fr); }

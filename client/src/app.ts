@@ -101,10 +101,41 @@ export class Game {
     if (this.state && this.mode === 'frozen') this.snapCam();
   }
 
-  private snapCam() {
-    // Bias the action upward so the bottom planning panel doesn't cover it.
-    this.renderer.cam.biasY = 0.2;
-    this.renderer.cam.snapTo(this.renderer.stageBounds(), 1.5, 3.5);
+  /** Height in px the planning panel currently steals from the bottom of the
+   *  canvas. Measured live so collapsing or a taller palette re-frames the
+   *  arena instead of hiding fighters behind the panel. */
+  private panelInset(): number {
+    const r = this.panel.root;
+    if (r.classList.contains('hidden')) return 0;
+    return Math.round(r.getBoundingClientRect().height);
+  }
+
+  /** Height the HUD cards steal from the top of the canvas. Cached: playback
+   *  reads it every frame and getBoundingClientRect forces a layout. */
+  private hudInsetPx = 0;
+  private measureHudInset(): number {
+    const r = this.hud.root;
+    this.hudInsetPx = r.classList.contains('hidden')
+      ? 0
+      : Math.round(r.getBoundingClientRect().height);
+    return this.hudInsetPx;
+  }
+
+  /** Frame the arena into the strip left visible above the planning panel.
+   *  `smooth` eases there instead of cutting — used when the player collapses
+   *  or expands the panel. */
+  private snapCam(smooth = false) {
+    const cam = this.renderer.cam;
+    cam.biasY = 0;
+    cam.insetBottom = this.panelInset();
+    cam.insetTop = this.measureHudInset();
+    // Portrait fits stage *width* into a narrow screen, which is what shrinks
+    // the fighters. Trim the side air so they stay readable.
+    const portrait = cam.screenW < cam.screenH;
+    const b = this.renderer.stageBounds(portrait ? 0.6 : 3);
+    const padX = portrait ? 0.3 : 1.5;
+    if (smooth) cam.setTarget(b, padX, 1.2);
+    else cam.snapTo(b, padX, 1.2);
   }
 
   // ---------------- screen flow ----------------
@@ -198,6 +229,10 @@ export class Game {
     const old = this.gameUiEl.querySelector('.plan-panel');
     if (old) old.remove();
     this.gameUiEl.appendChild(this.panel.root);
+    // Collapsing/expanding the panel changes how much arena is visible.
+    this.panel.onLayoutChange = () => {
+      if (this.mode === 'frozen') this.snapCam(true);
+    };
     this.renderer.setStage(this.ctx.stage);
     this.renderer.clearJuice();
     this.snapCam();
@@ -302,7 +337,10 @@ export class Game {
     }
 
     const chars = this.buildPlaybackChars(pb);
+    // Panel is hidden while the turn resolves, but the HUD stays up.
     this.renderer.cam.biasY = 0.06;
+    this.renderer.cam.insetBottom = 0;
+    this.renderer.cam.insetTop = this.hudInsetPx;
     this.renderer.frameChars(chars, 2.2, 2.0);
     this.renderer.drawChars(chars);
 

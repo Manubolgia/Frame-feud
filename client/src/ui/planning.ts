@@ -36,8 +36,13 @@ export class PlanningPanel {
   private headEl!: HTMLElement;
   private aimWrap!: HTMLElement;
   private lockBtn!: HTMLButtonElement;
+  private collapseBtn!: HTMLButtonElement;
 
   private pendingAim?: { moveId: string; angle: number };
+  private collapsed = false;
+  /** Fired whenever the panel's occupied height changes, so the camera can
+   *  re-frame the arena around the space that's actually left. */
+  onLayoutChange?: () => void;
 
   constructor(
     renderer: Renderer,
@@ -49,6 +54,22 @@ export class PlanningPanel {
     this.onLock = onLock;
     this.root = el('div', { cls: 'plan-panel hidden' });
     this.build();
+  }
+
+  /** Collapse to a slim bar so the player can see the whole arena. Clear/Undo
+   *  and LOCK IN stay reachable while collapsed. */
+  setCollapsed(v: boolean) {
+    if (this.collapsed === v) return;
+    this.collapsed = v;
+    this.root.classList.toggle('collapsed', v);
+    this.collapseBtn.setAttribute('aria-expanded', String(!v));
+    this.collapseBtn.title = v ? 'Show moves' : 'Hide moves';
+    this.onLayoutChange?.();
+  }
+
+  toggleCollapsed() {
+    sfx.uiSelect();
+    this.setCollapsed(!this.collapsed);
   }
 
   private build() {
@@ -73,8 +94,18 @@ export class PlanningPanel {
       ],
     });
 
+    this.collapseBtn = el('button', {
+      cls: 'collapse-btn',
+      html: icon('chevron_down', { size: 22 }),
+      attrs: { title: 'Hide moves', 'aria-expanded': 'true', 'aria-label': 'Hide moves' },
+      on: { click: () => this.toggleCollapsed() },
+    }) as HTMLButtonElement;
+
     this.root.append(
-      el('div', { cls: 'plan-topbar', children: [this.headEl, this.budgetEl] }),
+      el('div', {
+        cls: 'plan-topbar',
+        children: [this.headEl, this.budgetEl, this.collapseBtn],
+      }),
       el('div', { cls: 'timeline-wrap', children: [el('span', { cls: 'tl-label', text: 'SEQUENCE' }), this.timelineEl] }),
       this.aimWrap,
       this.paletteEl,
@@ -89,15 +120,22 @@ export class PlanningPanel {
     this.pendingAim = undefined;
     this.aimWrap.classList.add('hidden');
     this.root.classList.remove('hidden');
+    // Each planner starts with the full palette in view.
+    this.collapsed = false;
+    this.root.classList.remove('collapsed');
+    this.collapseBtn.setAttribute('aria-expanded', 'true');
+    this.collapseBtn.title = 'Hide moves';
     this.renderer.clearAim();
     this.renderPalette();
     this.refresh();
+    this.onLayoutChange?.();
   }
 
   hide() {
     this.root.classList.add('hidden');
     this.renderer.clearPrediction();
     this.renderer.clearAim();
+    this.onLayoutChange?.();
   }
 
   private def() {
