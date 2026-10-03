@@ -16,15 +16,16 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Frame Feud',
-        short_name: 'FrameFeud',
+        short_name: 'Frame Feud',
         description:
-          'A 4-player platform fighter with simultaneous turn-based combat. Plan blind, lock in, watch it resolve.',
-        theme_color: '#6c4cff',
-        background_color: '#0c0c1a',
+          'A turn-based fighting game. Both players pick a move in secret, then every frame plays out at once.',
+        theme_color: '#07070c',
+        background_color: '#07070c',
         display: 'standalone',
+        categories: ['games'],
         // Portrait is a first-class layout (collapsible panel + inset-aware
         // camera), so don't lock installed instances to landscape.
         orientation: 'any',
@@ -34,7 +35,7 @@ export default defineConfig({
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: 'icon-512.png',
+            src: 'icon-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
@@ -43,6 +44,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Only the Latin font subsets are needed offline.
+        globIgnores: ['**/*cyrillic*', '**/*greek*', '**/*vietnamese*'],
+        navigateFallback: 'index.html',
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),

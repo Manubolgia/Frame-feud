@@ -1,52 +1,55 @@
-/** WebSocket message contracts — shared shape with the Cloudflare Worker. */
+/**
+ * Wire protocol between the game and the room server (Cloudflare Durable
+ * Object). Lockstep on decisions: the server only relays each step's two
+ * decisions; every client simulates the identical result itself.
+ *
+ * The worker keeps a structural copy of these types in worker/src/protocol.ts.
+ */
 
-import type { ActionQueue, GameState } from '../sim/types';
+import type { Decision, MatchConfig } from '../sim/types';
 
-export interface LobbyPlayer {
-  playerId: string;
+export interface SeatInfo {
   name: string;
-  slot: number;
-  dynasty: string[];
+  char: string;
+  palette: number;
   ready: boolean;
   connected: boolean;
-  isHost: boolean;
 }
 
-export interface LobbyState {
-  room: string;
-  stageId: string;
-  players: LobbyPlayer[];
-  started: boolean;
+export interface Lobby {
+  code: string;
+  stage: string;
+  rounds: number;
+  /** Seconds per decision, 0 = untimed. */
+  timer: number;
+  seats: [SeatInfo | null, SeatInfo | null];
+  host: number;
+  spectators: number;
+  phase: 'lobby' | 'match' | 'over';
+  rematch: [boolean, boolean];
 }
 
 export type ClientMsg =
-  | { t: 'join'; room: string; name: string }
-  | { t: 'reconnect'; room: string; playerId: string; token: string }
-  | { t: 'pick_dynasty'; dynasty: string[] }
-  | { t: 'pick_stage'; stageId: string }
-  | { t: 'ready_lobby'; ready: boolean }
-  | { t: 'start_match' }
-  | { t: 'plan_submit'; turn: number; queue: ActionQueue }
-  | { t: 'unready_plan'; turn: number }
-  | { t: 'state_hash'; turn: number; hash: string }
-  | { t: 'ping' };
+  | { t: 'hello'; v: string; name: string; resume?: { id: string; token: string } }
+  | { t: 'pick'; char?: string; palette?: number; ready?: boolean }
+  | { t: 'host'; stage?: string; rounds?: number; timer?: number }
+  | { t: 'decide'; step: number; d: Decision }
+  | { t: 'undecide'; step: number }
+  | { t: 'hash'; step: number; h: string }
+  | { t: 'over'; winner: number }
+  | { t: 'rematch'; want: boolean }
+  | { t: 'lobby' }
+  | { t: 'leave' }
+  | { t: 'ping'; at: number };
 
 export type ServerMsg =
-  | { t: 'joined'; playerId: string; token: string; slot: number; lobby: LobbyState }
-  | { t: 'lobby_state'; lobby: LobbyState }
-  | { t: 'error'; message: string }
-  | {
-      t: 'match_start';
-      seed: number;
-      stageId: string;
-      roster: { playerId: string; name: string; slot: number; dynasty: string[] }[];
-      order: string[];
-    }
-  | { t: 'turn_begin'; turn: number; deadline?: number }
-  | { t: 'plan_status'; turn: number; readyPlayers: string[] }
-  | { t: 'resolve'; turn: number; seed: number; queues: ActionQueue[] }
-  | { t: 'state_sync'; state: GameState }
-  | { t: 'desync_detected'; turn: number }
-  | { t: 'player_left'; playerId: string }
-  | { t: 'match_over'; winner: string }
-  | { t: 'pong' };
+  | { t: 'welcome'; id: string; token: string; seat: number; lobby: Lobby }
+  | { t: 'lobby'; lobby: Lobby }
+  | { t: 'start'; cfg: MatchConfig; timer: number; log: [Decision, Decision][]; locked: [boolean, boolean] }
+  | { t: 'locked'; step: number; seats: [boolean, boolean] }
+  | { t: 'resolve'; step: number; ds: [Decision, Decision] }
+  | { t: 'desync'; step: number }
+  | { t: 'presence'; seat: number; connected: boolean }
+  | { t: 'ended'; winner: number; reason: 'ko' | 'forfeit' }
+  | { t: 'error'; code: string; message: string }
+  | { t: 'pong'; at: number };

@@ -6,3 +6,5 @@ dist/
 .dev.vars
 client/dev-dist/
 client/stats.html
+.env.local
+smoke-fail.png

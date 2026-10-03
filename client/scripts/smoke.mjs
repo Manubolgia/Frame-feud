@@ -1,88 +1,74 @@
-/** Headless smoke test: boot the built app, drive title -> local match ->
- *  planning -> lock -> resolution, asserting no console errors and that the
- *  turn loop actually advances. */
+/**
+ * Headless smoke test. Boots a served build, starts a CPU match, plays a
+ * dozen turns with random picks and fails on any console error or if the
+ * turn counter stops advancing.
+ *
+ *   npm run build && npm run preview          # in one terminal
+ *   node scripts/smoke.mjs                    # in another
+ *
+ * SMOKE_URL overrides the address; SMOKE_TURNS the number of turns.
+ */
 import { chromium } from 'playwright';
 
-const URL = process.env.SMOKE_URL || 'http://localhost:4173/frame-feud/';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' }).catch(() => chromium.launch());
-const page = await browser.newPage({ viewport: { width: 900, height: 520 } });
+const URL = process.env.SMOKE_URL || 'http://localhost:4173/Frame-feud/';
+const TURNS = Number(process.env.SMOKE_TURNS || 12);
+
+const launch = { args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] };
+const browser = await chromium.launch({ ...launch, executablePath: process.env.CHROMIUM_PATH || undefined }).catch(() =>
+  chromium.launch({ ...launch, executablePath: '/opt/pw-browsers/chromium' }),
+);
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
+page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+page.on('pageerror', (e) => errors.push(`PAGEERROR ${e.message}`));
+await page.addInitScript(() => {
+  localStorage.setItem('framefeud.settings.v2', JSON.stringify({ seenGuide: true, speed: 2, rounds: 1, cpu: 0 }));
+});
+
+const fail = async (why) => {
+  console.error(`smoke: FAIL - ${why}`);
+  for (const e of errors) console.error(`  ${e}`);
+  await page.screenshot({ path: 'smoke-fail.png' }).catch(() => {});
+  await browser.close();
+  process.exit(1);
+};
 
 await page.goto(URL, { waitUntil: 'networkidle' });
-await page.waitForTimeout(500);
+await page.click('[data-id="cpu"]');
+await page.click('.go');
 
-async function tap(text) {
-  const el = page.getByText(text, { exact: false }).first();
-  await el.click();
-  await page.waitForTimeout(250);
-}
-
-// title -> local
-await page.locator('.menu-btn-label', { hasText: 'LOCAL MATCH' }).click();
-await page.waitForTimeout(300);
-// start match (default config: 1 human + 2 cpu)
-await page.locator('.menu-btn.primary.wide').click();
-await page.waitForTimeout(600);
-
-// Should be in planning now (panel visible). Add a couple moves + lock.
-const panel = await page.locator('.plan-panel').isVisible().catch(() => false);
-console.log('planning panel visible:', panel);
-if (panel) {
-  const btns = page.locator('.move-btn:not(.disabled)');
-  const n = await btns.count();
-  console.log('palette moves:', n);
-  if (n > 0) {
-    await btns.nth(1).click();
-    await page.waitForTimeout(120);
-    await btns.nth(Math.min(3, n - 1)).click();
-    await page.waitForTimeout(120);
+const turnOf = () => page.evaluate(() => document.querySelector('.hud-step')?.textContent ?? '');
+let played = 0;
+let last = '';
+let stuckSince = Date.now();
+while (played < TURNS) {
+  if (await page.locator('.screen.results').count()) break;
+  // DI and wake-up turns have no move tiles; those lock in as they are
+  const lock = page.locator('.panel:not(.hidden) .lock');
+  const tiles = page.locator('.panel:not(.hidden) .tile:not(.off)');
+  if (await lock.count()) {
+    const tabs = page.locator('.tab:not(.empty)');
+    const tn = await tabs.count();
+    if (tn > 1) await tabs.nth(Math.floor(Math.random() * tn)).click();
+    const n = await tiles.count();
+    if (n) await tiles.nth(Math.floor(Math.random() * n)).click();
+    if (await lock.isEnabled()) {
+      await lock.click();
+      played++;
+    }
   }
-  await page.locator('.lock-btn').click();
-  await page.waitForTimeout(400);
-}
-
-// poll up to 12s for the next planning phase to confirm the loop cycles
-async function waitForPlanning(ms) {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    const vis = await page.locator('.plan-panel').isVisible().catch(() => false);
-    const lock = await page.locator('.lock-btn').isVisible().catch(() => false);
-    if (vis && lock) return true;
-    await page.waitForTimeout(250);
+  const t = await turnOf();
+  if (t !== last) {
+    last = t;
+    stuckSince = Date.now();
+  } else if (Date.now() - stuckSince > 90_000) {
+    await fail(`turn counter stuck at "${t}"`);
   }
-  return false;
+  if (errors.length) await fail('console errors');
+  await page.waitForTimeout(150);
 }
 
-const backToPlanning = await waitForPlanning(14000);
-const hud = await page.locator('.hud-card').count();
-console.log('hud cards:', hud);
-console.log('cycled back to planning after a turn:', backToPlanning);
-
-// run several automated turns to ensure stability over many turns
-let turnsDone = 0;
-for (let t = 0; t < 6; t++) {
-  if (await page.locator('.lock-btn').isVisible().catch(() => false)) {
-    const bb = page.locator('.move-btn:not(.disabled)');
-    if ((await bb.count()) > 2) { await bb.nth(2).click(); await page.waitForTimeout(80); }
-    await page.locator('.lock-btn').click();
-    turnsDone++;
-    // wait for either next planning or results screen
-    const ok = await Promise.race([
-      waitForPlanning(14000),
-      page.locator('.results-screen').waitFor({ timeout: 14000 }).then(() => 'results').catch(() => false),
-    ]);
-    if (ok === 'results') { console.log('reached results at turn', turnsDone); break; }
-  } else if (await page.locator('.results-screen').isVisible().catch(() => false)) {
-    console.log('match over (results visible)');
-    break;
-  }
-}
-console.log('turns driven:', turnsDone);
-
-console.log('--- console errors ---');
-console.log(errors.length ? errors.slice(0, 20).join('\n') : '(none)');
+if (errors.length) await fail('console errors');
+console.log(`smoke: OK - ${played} turns played, now at "${await turnOf()}"`);
 await browser.close();
-process.exit(errors.length ? 1 : 0);

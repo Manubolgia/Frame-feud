@@ -1,90 +1,53 @@
 /**
- * Fixed-point integer math for the deterministic simulation.
+ * Integer math for the deterministic simulation.
  *
- * RULE: Every value that feeds back into authoritative game state is an integer
- * scaled by FIXED_SCALE. We only ever use + - * and integer division with
- * explicit truncation. No Math.random, no Math.sin/cos, no sqrt-on-floats.
- * This guarantees byte-identical results across browsers / devices / Node.
+ * RULE: every value that feeds back into authoritative state is an integer.
+ * Positions and velocities are stored in sub-pixels (SUB per pixel). Only
+ * + - * and truncating division are used, plus an exact integer square root,
+ * so two browsers (or a browser and Node) always produce identical frames.
  */
 
-export type Fixed = number; // integer = (world unit * FIXED_SCALE)
+/** Sub-pixels per world pixel. */
+export const SUB = 100;
 
-export const FIXED_SCALE = 1000;
-export const ONE: Fixed = FIXED_SCALE;
-export const HALF: Fixed = FIXED_SCALE / 2;
+/** Author-time helper: pixels (may be fractional) -> sub-pixels. Runs on
+ *  literal constants only, so the rounding is stable everywhere. */
+export const px = (n: number): number => Math.round(n * SUB);
 
-export interface Vec2 {
-  x: Fixed;
-  y: Fixed;
-}
+export const toPx = (s: number): number => s / SUB;
 
-/** Author-time helper: turn a human float constant into fixed. Deterministic
- *  because it runs on literal constants (IEEE-754 parse + round are stable). */
-export const FX = (n: number): Fixed => Math.round(n * FIXED_SCALE);
-
-export const fromInt = (n: number): Fixed => (n * FIXED_SCALE) | 0;
-export const toFloat = (f: Fixed): number => f / FIXED_SCALE;
-
-/** Fixed * Fixed -> Fixed (truncated toward zero). */
-export function fxMul(a: Fixed, b: Fixed): Fixed {
-  return Math.trunc((a * b) / FIXED_SCALE);
-}
-
-/** Fixed / Fixed -> Fixed (truncated toward zero). */
-export function fxDiv(a: Fixed, b: Fixed): Fixed {
-  if (b === 0) return 0;
-  return Math.trunc((a * FIXED_SCALE) / b);
-}
-
-/** Multiply a fixed value by an integer scalar / divide by integer. */
-export const fxScale = (a: Fixed, num: number, den: number): Fixed =>
-  Math.trunc((a * num) / den);
-
-export const absF = (a: Fixed): Fixed => (a < 0 ? -a : a);
 export const sign = (a: number): number => (a > 0 ? 1 : a < 0 ? -1 : 0);
+export const abs = (a: number): number => (a < 0 ? -a : a);
 
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
-/** Integer square root (floor). Operates on a plain integer (not fixed). */
+/** Truncating integer division (toward zero). */
+export const idiv = (a: number, b: number): number => (b === 0 ? 0 : Math.trunc(a / b));
+
+/** a * num / den, truncated. */
+export const scale = (a: number, num: number, den: number): number =>
+  den === 0 ? 0 : Math.trunc((a * num) / den);
+
+/** Exact floor(sqrt(n)) for non-negative integers. */
 export function isqrt(n: number): number {
   if (n <= 0) return 0;
-  let x = Math.floor(Math.sqrt(n)); // seed; corrected below so result is exact
-  // Correct any float rounding so the result is fully deterministic.
+  let x = Math.floor(Math.sqrt(n));
   while (x * x > n) x--;
   while ((x + 1) * (x + 1) <= n) x++;
   return x;
 }
 
-/** Length of a fixed-point vector, returned in fixed. */
-export function fxLen(x: Fixed, y: Fixed): Fixed {
-  // (x^2 + y^2) is in fixed^2 units; isqrt brings it back to fixed.
-  return isqrt(x * x + y * y);
+export const len2 = (x: number, y: number): number => isqrt(x * x + y * y);
+
+/** Rescale the vector (x, y) to integer length `mag`. */
+export function withLength(x: number, y: number, mag: number): [number, number] {
+  const l = len2(x, y);
+  if (l === 0) return [0, 0];
+  return [Math.trunc((x * mag) / l), Math.trunc((y * mag) / l)];
 }
 
-/**
- * Bhaskara I integer sine approximation. Input: integer degrees.
- * Output: fixed-point sine in [-ONE, ONE]. Pure integer math => deterministic
- * across all JS engines (no Math.sin LUT desync risk).
- */
-export function fxSin(degInput: number): Fixed {
-  let deg = ((degInput % 360) + 360) % 360;
-  let negate = false;
-  if (deg >= 180) {
-    deg -= 180;
-    negate = true;
-  }
-  const t = deg * (180 - deg);
-  // sin = 4t / (40500 - t)  -> scale to fixed
-  const val = Math.trunc((4 * t * FIXED_SCALE) / (40500 - t));
-  return negate ? -val : val;
-}
-
-export function fxCos(deg: number): Fixed {
-  return fxSin(deg + 90);
-}
-
-export const v2 = (x: Fixed, y: Fixed): Vec2 => ({ x, y });
-export const v2add = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x + b.x, y: a.y + b.y });
-export const v2zero = (): Vec2 => ({ x: 0, y: 0 });
+/** Integer lerp between a and b by t/den. */
+export const lerpI = (a: number, b: number, t: number, den: number): number =>
+  a + Math.trunc(((b - a) * t) / den);

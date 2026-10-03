@@ -1,128 +1,120 @@
-/** Smooth, auto-framing camera. Maps fixed-point world coords to screen px.
- *  Camera math is cosmetic only — never feeds back into the sim. */
+/**
+ * Fighting-game camera: frames both fighters inside the band of screen the
+ * UI leaves free, keeps the floor low in frame, never shows far past the
+ * walls, and adds shake and impact zoom. World units are pixels.
+ */
 
-import { FIXED_SCALE } from '../sim/fixed';
-
-export interface Bounds {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
+export interface Band {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 export class Camera {
-  cx = 0; // world center x (fixed units / FIXED_SCALE -> we store in float world units)
-  cy = 0;
-  viewH = 16; // world units visible vertically
-  // targets for smoothing
-  private tcx = 0;
-  private tcy = 0;
-  private tViewH = 16;
-  shakeX = 0;
-  shakeY = 0;
-  /** Vertical framing bias as a fraction of viewH (>0 shifts action upward on
-   *  screen). Used for small cosmetic nudges. */
-  biasY = 0;
-  /** Screen pixels occluded by UI: the HUD cards on top, the planning panel
-   *  below. The camera fits the action into the clear band between them and
-   *  centres it there, so fighters are never drawn underneath either. */
-  insetBottom = 0;
-  insetTop = 0;
-  private shakeMag = 0;
-
+  /** World point at the centre of the band. */
+  x = 0;
+  y = -160;
+  /** World px visible across the screen width. */
+  viewW = 900;
+  private tx = 0;
+  private ty = -160;
+  private tw = 900;
   screenW = 800;
   screenH = 600;
+  band: Band = { left: 0, top: 0, right: 800, bottom: 600 };
+  shake = 0;
+  private shakeX = 0;
+  private shakeY = 0;
+  punch = 0;
+  /** World half-width between the walls. */
+  stageHalf = 700;
 
   resize(w: number, h: number) {
     this.screenW = w;
     this.screenH = h;
   }
 
-  /** Instantly snap (used at planning start). */
-  snapTo(b: Bounds, padX: number, padY: number) {
-    this.computeTarget(b, padX, padY);
-    this.cx = this.tcx;
-    this.cy = this.tcy;
-    this.viewH = this.tViewH;
+  get bandH(): number {
+    return Math.max(80, this.band.bottom - this.band.top);
   }
 
-  setTarget(b: Bounds, padX: number, padY: number) {
-    this.computeTarget(b, padX, padY);
+  get bandW(): number {
+    return Math.max(120, this.band.right - this.band.left);
   }
 
-  private computeTarget(b: Bounds, padX: number, padY: number) {
-    const aspect = this.screenW / this.screenH;
-    const w = Math.max(b.maxX - b.minX + padX * 2, 6);
-    const h = Math.max(b.maxY - b.minY + padY * 2, 4);
+  /** Pixels per world px. */
+  get scale(): number {
+    return (this.bandW / this.viewW) * (1 + this.punch);
+  }
 
-    // Only the band between the HUD and the planning panel is really visible.
-    // Zoom to fit that band rather than the full canvas. Cap the total inset so
-    // a huge panel can't collapse the band to nothing.
-    const maxInset = this.screenH * 0.8;
-    let insetT = Math.max(0, this.insetTop);
-    let insetB = Math.max(0, this.insetBottom);
-    const total = insetT + insetB;
-    if (total > maxInset && total > 0) {
-      const k = maxInset / total;
-      insetT *= k;
-      insetB *= k;
+  /** Frame a set of world-space points of interest (fighter boxes). */
+  target(minX: number, maxX: number, minY: number, snap = false, wide = false) {
+    const aspect = this.bandW / this.bandH;
+    const span = maxX - minX;
+    // Horizontal: both fighters plus margin; vertical: keep head room.
+    const portrait = aspect < 1 || this.bandW < 620;
+    const margin = portrait ? 80 : 240;
+    let w = Math.max(span + margin * 2, portrait ? 360 : 700);
+    // Height needed: from floor (with a little below) to above the highest point.
+    const needH = Math.max(portrait ? 240 : 320, -minY + 150);
+    w = Math.max(w, needH * aspect);
+    if (wide) w = Math.max(w, this.stageHalf * 2 + 200);
+    w = Math.min(w, this.stageHalf * 2 + (portrait ? 80 : 360));
+    const viewH = w / aspect;
+    let cx = (minX + maxX) / 2;
+    const half = w / 2;
+    const lim = this.stageHalf + (portrait ? 40 : 140);
+    if (half < lim) cx = Math.max(-lim + half, Math.min(lim - half, cx));
+    else cx = 0;
+    // Floor sits ~16% above the band bottom unless fighters are high up.
+    const floorFrac = 0.84;
+    let camY = -viewH * (floorFrac - 0.5);
+    const top = camY - viewH / 2;
+    const topNeeded = minY - 70;
+    if (topNeeded < top) camY -= top - topNeeded;
+    this.tx = cx;
+    this.ty = camY;
+    this.tw = w;
+    if (snap) {
+      this.x = this.tx;
+      this.y = this.ty;
+      this.viewW = this.tw;
     }
-    const visH = Math.max(this.screenH - insetT - insetB, 1);
-
-    const viewHByH = (h * this.screenH) / visH; // fit height into the clear band
-    const viewHByW = w / aspect; // full width is never occluded
-    this.tViewH = Math.max(viewHByH, viewHByW);
-
-    // Re-centre on the clear band: shift by half the *difference* of the two
-    // insets, converted from pixels into world units.
-    const shift = ((insetB - insetT) * this.tViewH) / (2 * this.screenH);
-    this.tcx = (b.minX + b.maxX) / 2;
-    this.tcy = (b.minY + b.maxY) / 2 + shift + this.biasY * this.tViewH;
-  }
-
-  addShake(mag: number) {
-    this.shakeMag = Math.min(this.shakeMag + mag, 0.9);
   }
 
   update(dt: number) {
-    const k = 1 - Math.pow(0.0008, dt); // smoothing factor
-    this.cx += (this.tcx - this.cx) * k;
-    this.cy += (this.tcy - this.cy) * k;
-    this.viewH += (this.tViewH - this.viewH) * k;
-    // shake
-    this.shakeMag *= Math.pow(0.0005, dt);
-    if (this.shakeMag < 0.001) this.shakeMag = 0;
-    const ang = Math.random() * Math.PI * 2;
-    this.shakeX = Math.cos(ang) * this.shakeMag;
-    this.shakeY = Math.sin(ang) * this.shakeMag;
+    const k = 1 - Math.pow(0.002, dt);
+    this.x += (this.tx - this.x) * k;
+    this.y += (this.ty - this.y) * k;
+    this.viewW += (this.tw - this.viewW) * k;
+    this.shake *= Math.pow(0.004, dt);
+    if (this.shake < 0.2) this.shake = 0;
+    this.punch *= Math.pow(0.02, dt);
+    if (this.punch < 0.001) this.punch = 0;
+    const a = Math.random() * Math.PI * 2;
+    this.shakeX = Math.cos(a) * this.shake;
+    this.shakeY = Math.sin(a) * this.shake;
   }
 
-  get scale(): number {
-    return this.screenH / this.viewH;
+  addShake(px: number) {
+    this.shake = Math.min(26, this.shake + px);
   }
 
-  /** fixed-point world -> screen pixel. */
-  toScreenX(fx: number): number {
-    const wx = fx / FIXED_SCALE;
-    return (wx - (this.cx + this.shakeX)) * this.scale + this.screenW / 2;
-  }
-  toScreenY(fy: number): number {
-    const wy = fy / FIXED_SCALE;
-    return (wy - (this.cy + this.shakeY)) * this.scale + this.screenH / 2;
-  }
-  /** world-units length -> pixels. */
-  len(units: number): number {
-    return units * this.scale;
-  }
-  fxLen(fixedLen: number): number {
-    return (fixedLen / FIXED_SCALE) * this.scale;
+  addPunch(f: number) {
+    this.punch = Math.min(0.12, this.punch + f);
   }
 
-  /** screen px -> world fixed. */
-  toWorldX(px: number): number {
-    return ((px - this.screenW / 2) / this.scale + this.cx) * FIXED_SCALE;
+  /** Screen position of the world origin and the scale, for containers. */
+  transform(): { x: number; y: number; s: number } {
+    const s = this.scale;
+    const cx = this.band.left + this.bandW / 2;
+    const cy = this.band.top + this.bandH / 2;
+    return { x: cx - (this.x + this.shakeX) * s, y: cy - (this.y + this.shakeY) * s, s };
   }
-  toWorldY(px: number): number {
-    return ((px - this.screenH / 2) / this.scale + this.cy) * FIXED_SCALE;
+
+  toScreen(wx: number, wy: number): [number, number] {
+    const t = this.transform();
+    return [t.x + wx * t.s, t.y + wy * t.s];
   }
 }
