@@ -3425,27 +3425,6 @@ button.fam-chip {
   .dirpad-svg {
     height: 96px;
   }
-  /* DI on a phone: the combo tally, the pad and burst; the explainer is in the guide */
-  .panel.di .detail-head,
-  .panel.di .di-info p:not(.muted) {
-    display: none;
-  }
-  .panel.di .di-info {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 2px 4px;
-  }
-  .panel.di .di-info p {
-    margin: 0;
-    font-size: 13px;
-  }
-  .di-big {
-    flex: none;
-    font-size: 24px;
-    white-space: nowrap;
-  }
   .status-pill {
     top: calc(var(--safe-t) + 70px);
     font-size: 14px;
@@ -3674,5 +3653,30 @@ button.fam-chip {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* DI on a phone, either way up: the combo tally, the pad and burst (the
+   explainer lives in the guide) */
+@media (max-width: 700px), (max-height: 560px) and (orientation: landscape) {
+  .panel.di .detail-head,
+  .panel.di .di-info p:not(.muted) {
+    display: none;
+  }
+  .panel.di .di-info {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 4px;
+  }
+  .panel.di .di-info p {
+    margin: 0;
+    font-size: 13px;
+  }
+  .panel.di .di-big {
+    flex: none;
+    font-size: 24px;
+    white-space: nowrap;
   }
 }
