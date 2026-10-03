@@ -83,7 +83,10 @@ function dirTo(from: Fighter, to: Fighter, toDef: CharacterDef): [number, number
 
 function reach(m: MoveDef): number {
   let r = 0;
-  for (const h of m.hitboxes ?? []) r = Math.max(r, abs(h.x) + h.r);
+  for (const h of m.hitboxes ?? []) {
+    const xs = h.path ? h.path.map((p) => abs(p[0])) : [abs(h.x)];
+    r = Math.max(r, Math.max(...xs) + h.r);
+  }
   return r;
 }
 
@@ -179,10 +182,13 @@ function candidates(st: GameState, i: number, ctx: SimCtx, level: Difficulty): D
       case 'elbowdrop':
         add({ move: id, dir: [Math.round(aim[0] * 0.8), Math.max(30, aim[1])] });
         break;
-      case 'missile':
-        add({ move: id, dir: [fwd * 60, -60] });
-        add({ move: id, dir: [fwd * Math.min(90, 30 + Math.round(dist / 100 / 6)), -70] });
+      case 'missile': {
+        // land it on them, or a little in front to catch a dash in
+        const d = Math.round(dist / 100);
+        add({ move: id, amt: Math.max(80, Math.min(720, d)) });
+        if (level > 0) add({ move: id, amt: Math.max(80, Math.min(720, d - 70)) });
         break;
+      }
       default:
         if (m.param?.dir?.kind === 'aim') {
           add({ move: id, dir: aim });

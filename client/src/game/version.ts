@@ -11,7 +11,7 @@ function strip(v: unknown): unknown {
   if (v && typeof v === 'object') {
     const o: Record<string, unknown> = {};
     for (const k of Object.keys(v as object).sort()) {
-      if (k === 'anim' || k === 'desc' || k === 'blurb' || k === 'palettes' || k === 'build' || k === 'stance' || k === 'icon' || k === 'name' || k === 'title' || k === 'look' || k === 'subtitle' || k === 'theme') continue;
+      if (k === 'anim' || k === 'desc' || k === 'blurb' || k === 'palettes' || k === 'build' || k === 'stance' || k === 'poses' || k === 'icon' || k === 'name' || k === 'title' || k === 'look' || k === 'subtitle' || k === 'theme') continue;
       o[k] = strip((v as Record<string, unknown>)[k]);
     }
     return o;
@@ -30,5 +30,8 @@ function hash(s: string): string {
   return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
 
-export const SIM_VERSION = 'ff2-' + hash(JSON.stringify(strip({ CHARACTERS, STAGES })));
-export const APP_VERSION = '2.0.0';
+/** Bump when the engine's rules change (src/sim), not just its content. */
+const ENGINE_REV = 'ff3';
+
+export const SIM_VERSION = ENGINE_REV + '-' + hash(JSON.stringify(strip({ CHARACTERS, STAGES })));
+export const APP_VERSION = '2.1.0';

@@ -9,7 +9,7 @@
  *    integers in [-100, 100] on each axis.
  */
 
-import type { AnimDef, Pose } from '../content/poses';
+import type { AnimDef, Pose, PoseSet } from '../content/poses';
 
 // ---------------------------------------------------------------- content --
 
@@ -62,6 +62,12 @@ export interface HitboxDef extends HitDef {
   throwMove?: string;
   /** Grabs only: can catch airborne opponents. */
   air?: boolean;
+  /** Render-side: the limb this hitbox rides on (checked by the tests so
+   *  what you see is what hits). */
+  bone?: 'fHand' | 'bHand' | 'fFoot' | 'bFoot' | 'tip' | 'blade' | 'head' | 'fKnee' | 'bKnee' | 'chest' | 'fElbow' | 'pelvis';
+  /** Baked from the animation (see scripts/bake.ts): the hitbox centre on
+   *  each active frame f0..f1, px, facing-relative. Overrides x / y. */
+  path?: [number, number][];
 }
 
 export interface SpawnDef {
@@ -75,6 +81,9 @@ export interface SpawnDef {
   aim?: boolean;
   /** Fixed facing-relative velocity px/frame when not aimed. */
   v?: [number, number];
+  /** Lob to land `amt` px ahead of the fighter: flight time is
+   *  t0 + distance / perPx frames (px). Needs projectile gravity. */
+  lob?: { t0: number; perPx: number };
 }
 
 export interface MotionKey {
@@ -272,6 +281,8 @@ export interface CharacterDef {
   build: BuildDef;
   /** Idle fighting stance. */
   stance: Pose;
+  /** Named poses for states and shared moves (render only). */
+  poses: PoseSet;
   moves: Record<string, MoveDef>;
   projectiles: Record<string, ProjectileDef>;
   /** Order moves appear in menus. */

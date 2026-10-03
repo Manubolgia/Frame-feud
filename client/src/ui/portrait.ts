@@ -3,7 +3,7 @@
 
 import { L, P, sampleAnim, type Pose } from '../content/poses';
 import { CHARACTERS } from '../content/roster';
-import { clothAnchors, drawFigure, makeCloth, solve, stepCloth, type FigureCloth } from '../render/figure';
+import { clothAnchors, clothSpec, drawFigure, makeCloth, solve, stepCloth, type FigureCloth } from '../render/figure';
 import { CanvasPen } from '../render/pen';
 
 export class Portrait {
@@ -102,12 +102,13 @@ export class Portrait {
     x.fill();
     const j = solve(def.build, pose, cx, grounded ? floor : floor - 40 * scale, this.facing, grounded, spin, null, scale);
     const an = clothAnchors(j, def.build);
+    const spec = clothSpec(def.build.kit);
     if (an.a) {
-      if (!this.cloth.a) this.cloth.a = makeCloth(def.build.kit === 'arc' ? 5 : 8, 8 * scale, an.a[0], an.a[1]);
+      if (!this.cloth.a) this.cloth.a = makeCloth(spec.a![0], spec.a![1] * scale, an.a[0], an.a[1]);
       stepCloth(this.cloth.a, an.a[0], an.a[1], dt || 0.016, -this.facing * (240 + Math.sin(this.t * 1.7) * 160) * scale, 700 * scale, floor);
     }
     if (an.b) {
-      if (!this.cloth.b) this.cloth.b = makeCloth(5, 8 * scale, an.b[0], an.b[1]);
+      if (!this.cloth.b) this.cloth.b = makeCloth(spec.b![0], spec.b![1] * scale, an.b[0], an.b[1]);
       stepCloth(this.cloth.b, an.b[0], an.b[1], dt || 0.016, -this.facing * 200 * scale, 700 * scale, floor);
     }
     drawFigure(this.pen, j, def.build, { main: pal[0], trim: pal[1], glow: pal[2], time: this.t, prop, halo: { c: pal[2], a: 0.16, w: 6 } }, this.cloth);

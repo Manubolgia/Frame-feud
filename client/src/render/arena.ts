@@ -3,13 +3,13 @@
  * planning ghost. Fed with simulation snapshots; never touches sim state.
  */
 
-import { Application, Container, Graphics } from 'pixi.js';
+import { AlphaFilter, Application, Container, Graphics } from 'pixi.js';
 import { ctxFor } from '../content/roster';
 import type { CharacterDef, FighterSnap, MatchConfig, SimCtx, SimEvent, Snapshot } from '../sim/types';
 import { choosePose } from './anim';
 import { Camera } from './camera';
 import { darken, lighten, mix } from './color';
-import { clothAnchors, drawFigure, makeCloth, solve, stepCloth, type FigureCloth, type Joints, type Look, type P2 } from './figure';
+import { boneAt, clothAnchors, clothSpec, drawFigure, makeCloth, solve, stepCloth, type FigureCloth, type Joints, type Look, type P2 } from './figure';
 import { Fx } from './fx';
 import { PixiPen } from './pen';
 import { drawProjectile } from './projectiles';
@@ -59,6 +59,14 @@ export class Arena {
   private shadows = new Graphics();
   private fighters = new Graphics();
   private ghostG = new Graphics();
+  /** Ghost figures: each drawn opaque and faded as one layer, so the
+   *  overlapping body parts don't stack up into a blotchy silhouette. */
+  private ghostFigs = [0.28, 0.35, 0.55].map((alpha) => {
+    const g = new Graphics();
+    g.filters = [new AlphaFilter({ alpha })];
+    return { g, pen: new PixiPen(g) };
+  });
+  private ghostLayer = new Container();
   private projG = new Graphics();
   private debugG = new Graphics();
   private screenFx = new Graphics();
@@ -78,7 +86,8 @@ export class Arena {
     this.ctx = ctxFor('dojo');
     this.pen = new PixiPen(this.fighters);
     this.ghostPen = new PixiPen(this.ghostG);
-    this.world.addChild(this.shadows, this.ghostG, this.projG, this.fighters, this.fx.layer, this.debugG);
+    this.ghostLayer.addChild(...this.ghostFigs.map((f) => f.g), this.ghostG);
+    this.world.addChild(this.shadows, this.ghostLayer, this.projG, this.fighters, this.fx.layer, this.debugG);
     this.root.addChild(this.back, this.dim, this.world, this.screenFx);
     app.stage.addChild(this.root);
     this.resize();
@@ -372,13 +381,14 @@ export class Arena {
 
     // cloth
     const an = clothAnchors(j, def.build);
+    const spec = clothSpec(def.build.kit);
     const wind = -(s.vx / 100) * 60 * 6 - s.facing * 260 + Math.sin(this.time * 3.1 + i) * 160;
     if (an.a) {
-      if (!st.cloth.a) st.cloth.a = makeCloth(def.build.kit === 'arc' ? 5 : 8, 8, an.a[0], an.a[1]);
+      if (!st.cloth.a) st.cloth.a = makeCloth(spec.a![0], spec.a![1], an.a[0], an.a[1]);
       stepCloth(st.cloth.a, an.a[0], an.a[1], dt, wind, 700, 0);
     }
     if (an.b) {
-      if (!st.cloth.b) st.cloth.b = makeCloth(5, 8, an.b[0], an.b[1]);
+      if (!st.cloth.b) st.cloth.b = makeCloth(spec.b![0], spec.b![1], an.b[0], an.b[1]);
       stepCloth(st.cloth.b, an.b[0], an.b[1], dt, wind * 0.8, 700, 0);
     }
 
@@ -401,6 +411,7 @@ export class Arena {
       halo,
       prop: po.prop,
       power: po.power,
+      open: po.open,
       charge: po.power ? 0.6 : 0,
     };
     drawFigure(this.pen, j, def.build, look, st.cloth);
@@ -428,7 +439,8 @@ export class Arena {
       tr.pts.shift();
     }
     if (limb) {
-      const p = limb === 'fa' ? j.fHand : limb === 'ba' ? j.bHand : limb === 'fl' ? j.fFoot : limb === 'bl' ? j.bFoot : j.head;
+      const p =
+        limb === 'tip' ? boneAt(j, 'tip') : limb === 'fa' ? boneAt(j, 'fHand') : limb === 'ba' ? boneAt(j, 'bHand') : limb === 'fl' ? boneAt(j, 'fFoot') : limb === 'bl' ? boneAt(j, 'bFoot') : j.head;
       tr.pts.push([p[0], p[1]]);
       tr.age.push(0);
     }
@@ -448,6 +460,7 @@ export class Arena {
   private drawGhost(gv: GhostView | null) {
     const g = this.ghostG;
     g.clear();
+    for (const f of this.ghostFigs) f.g.clear();
     if (!gv || gv.frames.length < 2) return;
     const me = gv.me;
     const pal = this.palette(me);
@@ -463,13 +476,13 @@ export class Arena {
     // where I'll be when I can act again
     if (gv.myNext > 0 && gv.myNext < frames.length) {
       const f = frames[gv.myNext].fighters[me];
-      this.ghostFigure(me, f, gv.myNext, pal[2], 0.28);
+      this.ghostFigure(me, f, gv.myNext, pal[2], 0);
     }
     // the animated ghost
     const k = Math.max(0, Math.min(frames.length - 1, Math.floor(gv.at)));
     const fr = frames[k];
-    if (gv.showOpponent) this.ghostFigure(1 - me, fr.fighters[1 - me], gv.at, this.palette(1 - me)[2], 0.35);
-    this.ghostFigure(me, fr.fighters[me], gv.at, lighten(pal[2], 0.2), 0.55);
+    if (gv.showOpponent) this.ghostFigure(1 - me, fr.fighters[1 - me], gv.at, this.palette(1 - me)[2], 1);
+    this.ghostFigure(me, fr.fighters[me], gv.at, lighten(pal[2], 0.2), 2);
     for (const p of fr.projs) {
       g.circle(p.x / 100, p.y / 100, 10).stroke({ color: this.palette(p.owner)[2], width: 2, alpha: 0.7 });
     }
@@ -482,12 +495,12 @@ export class Arena {
     }
   }
 
-  private ghostFigure(i: number, s: FighterSnap, mf: number, c: number, alpha: number) {
+  private ghostFigure(i: number, s: FighterSnap, mf: number, c: number, slot: number) {
     const def = this.ctx.chars[this.cfg!.chars[i]];
     if (s.hidden) return;
     const po = choosePose(def, s, s.mf + (mf % 1), 0, 0);
     const j = solve(def.build, po.pose, s.x / 100, s.y / 100, s.facing, po.grounded && s.grounded, po.spin, po.aim);
-    drawFigure(this.ghostPen, j, def.build, { main: c, trim: c, glow: c, solid: c, alpha, time: 0, prop: po.prop });
+    drawFigure(this.ghostFigs[slot].pen, j, def.build, { main: c, trim: c, glow: c, solid: c, time: 0, prop: po.prop });
   }
 
   // ------------------------------------------------------------ debug --
@@ -519,8 +532,9 @@ export class Arena {
             cx = x + (f.dir[0] / l) * hb.x;
             cy = y + hb.y + (f.dir[1] / l) * hb.x;
           } else {
-            cx = x + hb.x * f.facing;
-            cy = y + hb.y;
+            const at = hb.path ? hb.path[Math.min(hb.path.length - 1, Math.floor(f.mf) - hb.f0)] : [hb.x, hb.y];
+            cx = x + at[0] * f.facing;
+            cy = y + at[1];
           }
           g.circle(cx, cy, hb.r).fill({ color: hb.kind === 'grab' ? 0x4da6ff : 0xff3b5c, alpha: 0.25 }).stroke({ color: hb.kind === 'grab' ? 0x4da6ff : 0xff3b5c, width: 2 });
         }

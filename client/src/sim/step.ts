@@ -29,6 +29,10 @@ export const PARRY_RECOVERY = 14;
 export const PARRY_STUN = 18;
 export const KD_FRAMES = 30;
 export const DI_PCT = 28;
+/** A grounded hit only lifts its victim off the floor when it pushes up at
+ *  least this hard (or is a knockdown). Smaller pops keep them standing, so
+ *  multi-hit strings stay grounded instead of turning into knockdowns. */
+export const LAUNCH_MIN = px(5);
 
 const GROUND_FRICTION = px(1.1);
 const STUN_FRICTION = px(0.5);
@@ -424,6 +428,10 @@ function moveFrame(st: GameState, i: number, ctx: SimCtx, ev: Ev): [boolean, boo
   // Projectiles.
   for (const s of m.spawns ?? []) {
     if (s.f !== fr) continue;
+    if (s.lob) {
+      lobProjectile(st, i, ctx, s.proj, f.x + px(s.x) * fc, f.y + px(s.y), px(mv.amt - s.x), s.lob, ev);
+      continue;
+    }
     spawnProjectile(st, i, ctx, s.proj, f.x + px(s.x) * fc, f.y + px(s.y), s, mv.dir, ev);
   }
 
@@ -680,6 +688,30 @@ export function spawnProjectile(
   emit(ev, { t: 'spawn', f: st.frame, i, kind, x, y });
 }
 
+/**
+ * Lob a projectile so it comes down `dist` sub-px ahead of where it spawned
+ * (facing-relative). Flight time grows with distance; the vertical speed is
+ * solved exactly for the projectile's gravity, so the ghost preview and the
+ * real throw land on the same pixel.
+ */
+function lobProjectile(st: GameState, i: number, ctx: SimCtx, kind: string, x: number, y: number, dist: number, lob: { t0: number; perPx: number }, ev: Ev) {
+  const f = st.fighters[i];
+  const pd = charOf(ctx, f).projectiles[kind];
+  if (!pd) return;
+  const d = Math.max(0, dist);
+  const T = clamp(lob.t0 + Math.trunc(d / px(lob.perPx)), 8, 120);
+  const g = px(pd.gravity ?? 0);
+  const y0 = Math.min(y, 0);
+  const vy = -Math.trunc((y0 + Math.trunc((g * T * (T + 1)) / 2)) / T);
+  spawnProjectile(st, i, ctx, kind, x, y0, { v: [0, 0] }, [f.facing, 0], ev);
+  const p = st.projs[st.projs.length - 1];
+  if (p && p.kind === kind) {
+    p.vx = Math.trunc(d / T) * f.facing;
+    p.vy = vy;
+    p.facing = f.facing;
+  }
+}
+
 function killProjectile(st: GameState, p: Projectile, ctx: SimCtx, ev: Ev, burst: boolean) {
   if (p.dead) return;
   p.dead = true;
@@ -858,8 +890,9 @@ function detectHits(st: GameState, ctx: SimCtx, ev: Ev, frozen: boolean[]): [boo
         kbx = Math.trunc((ux * mag) / 1000);
         kby = Math.trunc((uy * mag) / 1000) + px(Math.min(0, hb.kb[1]) / 2);
       } else {
-        cx = f.x + px(hb.x) * f.facing;
-        cy = f.y + px(hb.y);
+        const at = hb.path ? hb.path[Math.min(hb.path.length - 1, fr - hb.f0)] : null;
+        cx = f.x + px(at ? at[0] : hb.x) * f.facing;
+        cy = f.y + px(at ? at[1] : hb.y);
         kbx = px(hb.kb[0]) * f.facing;
         kby = px(hb.kb[1]);
       }
@@ -1155,7 +1188,7 @@ function applyHit(
     v.vy = -px(6);
     v.grounded = false;
     v.y = Math.min(v.y, -1);
-  } else if (v.grounded && ky >= 0 && !hb.knockdown) {
+  } else if (v.grounded && ky > -LAUNCH_MIN && !hb.knockdown) {
     v.vx = kx;
     v.vy = 0;
   } else {
