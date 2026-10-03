@@ -315,7 +315,12 @@ export interface Decision {
 
 export interface MatchConfig {
   stageId: string;
+  /** The fighter each side starts with (the family lead when `teams` is set). */
   chars: [string, string];
+  /** Family Feud: each side's lineup, in order (1-3 fighters). When a fighter
+   *  is knocked out the next one steps in; the side whose whole family falls
+   *  loses. Absent: a single fighter each, best of `roundsToWin` rounds. */
+  teams?: [string[], string[]];
   palettes: [number, number];
   names: [string, string];
   roundsToWin: number;
@@ -423,7 +428,10 @@ export interface GameState {
   /** Decision points resolved so far this match. */
   step: number;
   round: number;
+  /** Rounds won; in a Family Feud, opposing family members knocked out. */
   wins: [number, number];
+  /** Family Feud: index into each side's lineup of the fighter on the floor. */
+  members: [number, number];
   fighters: [Fighter, Fighter];
   projs: Projectile[];
   nextId: number;
@@ -469,6 +477,7 @@ export type SimEvent =
   | { t: 'feint'; f: number; i: number };
 
 export interface FighterSnap {
+  char: string;
   x: number;
   y: number;
   vx: number;

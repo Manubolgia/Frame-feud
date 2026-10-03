@@ -6,7 +6,6 @@ import { icon } from '../icons';
 
 interface Page {
   title: string;
-  kicker: string;
   body: string[];
   art: string;
 }
@@ -23,7 +22,6 @@ const fighter = (x: number, y: number, c: string, flip = false, s = 1) => {
 
 const PAGES: Page[] = [
   {
-    kicker: '1 / 7',
     title: 'Everyone moves at once',
     body: [
       'Frame Feud is a fighting game played in turns. At every decision point, both players secretly pick an action, lock in, and the game plays out frame by frame until somebody can act again.',
@@ -37,7 +35,25 @@ const PAGES: Page[] = [
       <text x="70" y="160" class="ga-s"><tspan class="ga-k1">■</tspan> startup  <tspan class="ga-k2">■</tspan> active  <tspan class="ga-k3">■</tspan> recovery</text>`),
   },
   {
-    kicker: '2 / 7',
+    title: 'Family feud',
+    body: [
+      'Each side brings a family of up to three fighters, in the order they’ll fight. A bout is one fighter from each family, and fighters enter at 60% of their usual health so a whole feud stays quick.',
+      'When a fighter is knocked out, the next member of their family steps in fresh. The winner stays on with their wounds, heals a fifth of what they’ve lost and keeps their meter. The last family standing wins.',
+    ],
+    art: svg(`
+      <text x="20" y="26" class="ga-t">YOUR FAMILY</text>
+      ${[0, 1, 2].map((i) => `<rect x="${20 + i * 38}" y="34" width="32" height="16" rx="4" class="${i === 0 ? 'ga-fam-on' : 'ga-fam'}"/>`).join('')}
+      <text x="340" y="26" class="ga-t" text-anchor="end">THEIRS</text>
+      ${[0, 1, 2].map((i) => `<rect x="${226 + i * 38}" y="34" width="32" height="16" rx="4" class="${i === 0 ? 'ga-fam-out' : i === 1 ? 'ga-fam2-on' : 'ga-fam2'}"/>`).join('')}
+      <path d="M232 37 L252 47 M252 37 L232 47" class="ga-x"/>
+      ${fighter(110, 178, '#3de0ff', false, 0.9)}
+      <g opacity=".35" transform="translate(214 172) rotate(-90)">${fighter(0, 0, '#ff4f6d', false, 0.7)}</g>
+      ${fighter(300, 178, '#ff4f6d', true, 0.9)}
+      <path d="M336 76 C350 96 346 112 326 118" class="ga-arrow" marker-end="url(#ahf)"/>
+      <text x="262" y="78" class="ga-s">steps in</text><text x="186" y="196" class="ga-s">K.O.</text>
+      <defs><marker id="ahf" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>`),
+  },
+  {
     title: 'Read the frames',
     body: [
       'Every move has startup (frames before it can hit), active frames, and recovery. The panel shows each move’s numbers, including how many frames ahead (+) or behind (−) you are after it hits or is blocked.',
@@ -49,7 +65,6 @@ const PAGES: Page[] = [
       <rect x="196" y="34" width="110" height="26" rx="13" class="ga-bad"/><text x="251" y="52" class="ga-tag">HITSTUN 12</text>`),
   },
   {
-    kicker: '3 / 7',
     title: 'Strike, block, grab',
     body: [
       'Strikes beat grabs. Blocks stop strikes and projectiles. Grabs beat blocks (and parries and armor). Every exchange is a read.',
@@ -63,7 +78,6 @@ const PAGES: Page[] = [
       <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>`),
   },
   {
-    kicker: '4 / 7',
     title: 'Trust the ghost',
     body: [
       'While you pick, a ghost acts out your choice in the arena, assuming your opponent stands still (or blocks — you can switch). Dots trace your path; the outline marks where you’ll be when you can act again.',
@@ -76,7 +90,6 @@ const PAGES: Page[] = [
       <rect x="230" y="30" width="116" height="34" rx="8" class="ga-panel"/><text x="288" y="52" class="ga-tag">HIT · 48 · +14</text>`),
   },
   {
-    kicker: '5 / 7',
     title: 'Getting hit: DI and Burst',
     body: [
       'Hits deal damage and hitstun. Follow-ups that land before hitstun ends form a combo, with damage scaling down each hit.',
@@ -89,7 +102,6 @@ const PAGES: Page[] = [
       <circle cx="80" cy="60" r="26" class="ga-burst"/><text x="80" y="65" class="ga-tl">BURST</text>`),
   },
   {
-    kicker: '6 / 7',
     title: 'Knockdowns, armor and walls',
     body: [
       'Landing from a launch knocks you down. You’re safe on the floor (except from moves that hit downed fighters), then choose how to rise: in place, rolling, or with a risky invulnerable kick.',
@@ -102,7 +114,6 @@ const PAGES: Page[] = [
       <path d="M220 120 L320 90 L270 60" class="ga-kb"/><text x="230" y="50" class="ga-s">wall bounce</text>`),
   },
   {
-    kicker: '7 / 7',
     title: 'Meter, supers and feints',
     body: [
       'Dealing and taking damage, walking or dashing forward, and parrying all build super meter (up to three bars). Supers cost one or two bars and turn a read into a round.',
@@ -125,7 +136,7 @@ export function guideScreen(onBack: () => void): HTMLElement {
   const render = () => {
     const p = PAGES[page];
     art.innerHTML = p.art;
-    text.replaceChildren(el('div', { cls: 'guide-kicker', text: p.kicker }), el('h3', { text: p.title }), ...p.body.map((b) => el('p', { text: b })));
+    text.replaceChildren(el('div', { cls: 'guide-kicker', text: `${page + 1} / ${PAGES.length}` }), el('h3', { text: p.title }), ...p.body.map((b) => el('p', { text: b })));
     dots.replaceChildren(...PAGES.map((_, i) => el('span', { cls: i === page ? 'on' : '' })));
     prev.disabled = page === 0;
     next.innerHTML = page === PAGES.length - 1 ? `<span>Got it</span>${icon('check', 18)}` : `<span>Next</span>${icon('stepfwd', 18)}`;

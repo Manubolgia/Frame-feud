@@ -4,7 +4,7 @@
  */
 
 import { AlphaFilter, Application, Container, Graphics } from 'pixi.js';
-import { ctxFor } from '../content/roster';
+import { colorsFor, ctxFor } from '../content/roster';
 import type { CharacterDef, FighterSnap, MatchConfig, SimCtx, SimEvent, Snapshot } from '../sim/types';
 import { choosePose } from './anim';
 import { Camera } from './camera';
@@ -73,6 +73,8 @@ export class Arena {
   fx = new Fx();
   private stage: StageView | null = null;
   private fs: FState[] = [this.newF(), this.newF()];
+  /** Character on the floor for each side (family members change mid-match). */
+  private cur: [string, string] = ['razor', 'razor'];
   private time = 0;
   private dimAmt = 0;
   private dimFocus = -1;
@@ -98,16 +100,18 @@ export class Arena {
   }
 
   resize() {
-    this.cam.resize(this.app.renderer.width / this.app.renderer.resolution, this.app.renderer.height / this.app.renderer.resolution);
+    // screen is in CSS pixels whatever the device pixel ratio
+    this.cam.resize(this.app.renderer.screen.width, this.app.renderer.screen.height);
   }
 
   setBand(left: number, top: number, right: number, bottom: number) {
-    this.cam.band = { left, top, right: Math.max(left + 120, right), bottom: Math.max(top + 80, bottom) };
+    this.cam.setBand({ left, top, right: Math.max(left + 120, right), bottom: Math.max(top + 80, bottom) });
   }
 
   setMatch(cfg: MatchConfig) {
     this.cfg = cfg;
     this.ctx = ctxFor(cfg.stageId);
+    this.cur = [cfg.chars[0], cfg.chars[1]];
     if (this.stage) {
       this.back.removeChildren();
       this.world.removeChild(this.stage.world, this.stage.front);
@@ -126,29 +130,41 @@ export class Arena {
     this.flashAmt = 0;
   }
 
-  palette(i: number): [number, number, number] {
-    const cfg = this.cfg!;
-    const def = this.ctx.chars[cfg.chars[i]];
-    const p = def.palettes[cfg.palettes[i] % def.palettes.length];
-    // Mirror matches with the same palette: shift P2's colours.
-    if (i === 1 && cfg.chars[0] === cfg.chars[1] && cfg.palettes[0] === cfg.palettes[1]) {
-      const q = def.palettes[(cfg.palettes[1] + 1) % def.palettes.length];
-      return q;
+  /** Keep the per-side characters in sync with a snapshot. */
+  syncChars(s: Snapshot) {
+    const a = s.fighters[0].char;
+    const b = s.fighters[1].char;
+    for (const [i, c] of [[0, a], [1, b]] as const) {
+      if (c && c !== this.cur[i]) {
+        this.cur[i] = c;
+        this.fs[i] = this.newF();
+      }
     }
-    return p;
+  }
+
+  /** The character currently fighting for side i. */
+  charOf(i: number): string {
+    return this.cur[i];
+  }
+
+  palette(i: number): [number, number, number] {
+    return colorsFor(this.cfg!, i, this.cur[i], this.cur[1 - i]);
   }
 
   /** Camera framing for a snapshot. */
   frame(s: Snapshot, snap = false, wide = false) {
+    this.syncChars(s);
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = 0;
     for (let i = 0; i < 2; i++) {
       const f = s.fighters[i];
-      const def = this.ctx.chars[this.cfg!.chars[i]];
+      const def = this.ctx.chars[this.cur[i]];
       const x = f.x / 100;
-      minX = Math.min(minX, x - def.width);
-      maxX = Math.max(maxX, x + def.width);
+      // the drawn figure (limbs, armour) reaches well past the hurtbox
+      const ext = Math.max(def.width, def.height * 0.5);
+      minX = Math.min(minX, x - ext);
+      maxX = Math.max(maxX, x + ext);
       minY = Math.min(minY, f.y / 100 - def.height);
     }
     this.cam.target(minX, maxX, minY, snap, wide);
@@ -227,7 +243,7 @@ export class Arena {
         this.fx.smoke(e.x / 100, e.y / 100 - 50, darken(col(e.i), 0.4));
         break;
       case 'move': {
-        const def = this.ctx.chars[this.cfg!.chars[e.i]];
+        const def = this.ctx.chars[this.cur[e.i]];
         const m = def.moves[e.move];
         if (m?.superFlash) {
           this.dimAmt = 1;
@@ -295,6 +311,8 @@ export class Arena {
    * Draw the scene between snapshots a and b (t in 0..1).
    */
   render(dt: number, a: Snapshot, b: Snapshot, t: number, opts: ArenaOpts, ghost: GhostView | null = null) {
+    this.syncChars(b);
+    this.resize(); // the renderer resizes itself a frame after the window does
     this.time += dt;
     const cam = this.cam;
     this.frame(b, false, !!opts.wide);
@@ -329,7 +347,7 @@ export class Arena {
     g.clear();
     for (const p of b.projs) {
       const pa = a.projs.find((q) => q.id === p.id);
-      const owner = this.cfg!.chars[p.owner];
+      const owner = this.cur[p.owner];
       const def = this.ctx.chars[owner].projectiles[p.kind];
       if (!def) continue;
       const ip = pa ? { ...p, x: pa.x + (p.x - pa.x) * t, y: pa.y + (p.y - pa.y) * t } : p;
@@ -351,7 +369,7 @@ export class Arena {
 
   private drawOne(i: number, sa: FighterSnap, sb: FighterSnap, t: number, dt: number, opts: ArenaOpts) {
     const cfg = this.cfg!;
-    const def: CharacterDef = this.ctx.chars[cfg.chars[i]];
+    const def: CharacterDef = this.ctx.chars[this.cur[i]];
     const st = this.fs[i];
     const s = t < 0.5 ? sa : sb;
     let x = (sa.x + (sb.x - sa.x) * t) / 100;
@@ -466,7 +484,7 @@ export class Arena {
     const pal = this.palette(me);
     const frames = gv.frames;
     // trajectory: a dotted line of my feet through the preview
-    const def = this.ctx.chars[this.cfg!.chars[me]];
+    const def = this.ctx.chars[this.cur[me]];
     const end = gv.myNext > 0 ? Math.min(gv.myNext, frames.length - 1) : frames.length - 1;
     for (let k = 0; k <= end; k += 2) {
       const f = frames[k].fighters[me];
@@ -496,7 +514,7 @@ export class Arena {
   }
 
   private ghostFigure(i: number, s: FighterSnap, mf: number, c: number, slot: number) {
-    const def = this.ctx.chars[this.cfg!.chars[i]];
+    const def = this.ctx.chars[this.cur[i]];
     if (s.hidden) return;
     const po = choosePose(def, s, s.mf + (mf % 1), 0, 0);
     const j = solve(def.build, po.pose, s.x / 100, s.y / 100, s.facing, po.grounded && s.grounded, po.spin, po.aim);
@@ -511,7 +529,7 @@ export class Arena {
     if (!on) return;
     for (let i = 0; i < 2; i++) {
       const f = s.fighters[i];
-      const def = this.ctx.chars[this.cfg!.chars[i]];
+      const def = this.ctx.chars[this.cur[i]];
       let w = def.width;
       let h = def.height;
       if (f.mode === 'kd' || f.mode === 'down') {
@@ -541,14 +559,14 @@ export class Arena {
       }
     }
     for (const p of s.projs) {
-      const def = this.ctx.chars[this.cfg!.chars[p.owner]].projectiles[p.kind];
+      const def = this.ctx.chars[this.cur[p.owner]].projectiles[p.kind];
       if (def?.hit) g.circle(p.x / 100, p.y / 100, def.r).stroke({ color: 0xff3b5c, width: 2 });
     }
   }
 
   /** Screen position of a fighter's head, for DOM labels. */
   headScreen(i: number, s: Snapshot): [number, number] {
-    const def = this.ctx.chars[this.cfg!.chars[i]];
+    const def = this.ctx.chars[this.cur[i]];
     const f = s.fighters[i];
     return this.cam.toScreen(f.x / 100, f.y / 100 - def.height - 18);
   }

@@ -21,7 +21,7 @@ export default defineConfig({
         name: 'Frame Feud',
         short_name: 'Frame Feud',
         description:
-          'A turn-based fighting game. Both players pick a move in secret, then every frame plays out at once.',
+          'A turn-based family feud fighting game. Both players pick a move in secret, then every frame plays out at once.',
         theme_color: '#07070c',
         background_color: '#07070c',
         display: 'standalone',

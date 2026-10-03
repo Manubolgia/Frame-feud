@@ -21,6 +21,8 @@ interface Seat {
   token: string;
   name: string;
   char: string;
+  /** Family lineup, lead first (Family Feud). */
+  team: string[];
   palette: number;
   ready: boolean;
   connected: boolean;
@@ -34,6 +36,7 @@ interface RoomState {
   stage: string;
   rounds: number;
   timer: number;
+  format: 'feud' | 'duel';
   seats: [Seat | null, Seat | null];
   host: number;
   phase: 'lobby' | 'match' | 'over';
@@ -53,6 +56,7 @@ interface Attachment {
 /** Grace period before a disconnected player forfeits a running match. */
 const FORFEIT_MS = 90_000;
 /** Extra time on top of the turn timer, covering playback of the last turn. */
+const MAX_FAMILY = 3;
 const DEADLINE_SLACK_MS = 20_000;
 const MAX_MSG = 4096;
 
@@ -180,8 +184,16 @@ export class Room {
     switch (m.t) {
       case 'pick':
         if (!seat || this.s.phase !== 'lobby') return;
-        if (typeof m.char === 'string' && ROSTER.includes(m.char)) seat.char = m.char;
-        if (Number.isInteger(m.palette) && m.palette! >= 0 && m.palette! < 4) seat.palette = m.palette!;
+        if (typeof m.char === 'string' && ROSTER.includes(m.char)) {
+          seat.char = m.char;
+          if (seat.team?.length) seat.team[0] = m.char;
+          else seat.team = [m.char];
+        }
+        if (Array.isArray(m.team) && m.team.length >= 1 && m.team.length <= MAX_FAMILY && m.team.every((c) => typeof c === 'string' && ROSTER.includes(c))) {
+          seat.team = m.team.slice();
+          seat.char = seat.team[0];
+        }
+        if (Number.isInteger(m.palette) && m.palette! >= 0 && m.palette! < 6) seat.palette = m.palette!;
         if (typeof m.ready === 'boolean') seat.ready = m.ready;
         await this.save();
         this.broadcastLobby();
@@ -192,6 +204,7 @@ export class Room {
         if (typeof m.stage === 'string' && STAGES.includes(m.stage)) this.s.stage = m.stage;
         if (Number.isInteger(m.rounds) && m.rounds! >= 1 && m.rounds! <= 3) this.s.rounds = m.rounds!;
         if (Number.isInteger(m.timer) && TIMERS.includes(m.timer!)) this.s.timer = m.timer!;
+        if (m.format === 'feud' || m.format === 'duel') this.s.format = m.format;
         await this.save();
         this.broadcastLobby();
         return;
@@ -279,7 +292,8 @@ export class Room {
         token: crypto.randomUUID(),
         name,
         char: free === 0 ? 'razor' : 'titan',
-        palette: 0,
+        team: free === 0 ? ['razor', 'arc', 'titan'] : ['titan', 'grip', 'razor'],
+        palette: free === 0 ? 0 : 1,
         ready: false,
         connected: true,
         forfeitAt: 0,
@@ -342,14 +356,18 @@ export class Room {
   private async startMatch() {
     const [a, b] = this.s.seats;
     if (!a || !b) return;
+    const feud = this.s.format === 'feud';
+    const ta = a.team?.length ? a.team : [a.char];
+    const tb = b.team?.length ? b.team : [b.char];
     this.s.cfg = {
       stageId: this.s.stage,
-      chars: [a.char, b.char],
-      palettes: [a.palette, b.palette],
+      chars: feud ? [ta[0], tb[0]] : [a.char, b.char],
+      palettes: [feud ? a.palette : a.palette % 4, feud ? b.palette : b.palette % 4],
       names: [a.name, b.name],
       roundsToWin: this.s.rounds,
       seed: (crypto.getRandomValues(new Uint32Array(1))[0] >>> 0),
     };
+    if (feud) this.s.cfg.teams = [ta.slice(), tb.slice()];
     // Clear the previous log.
     const keys = await this.ctx.storage.list({ prefix: 'log:' });
     if (keys.size) await this.ctx.storage.delete([...keys.keys()]);
@@ -424,7 +442,8 @@ export class Room {
       stage: this.s.stage,
       rounds: this.s.rounds,
       timer: this.s.timer,
-      seats: this.s.seats.map((st) => (st ? { name: st.name, char: st.char, palette: st.palette, ready: st.ready, connected: st.connected } : null)) as Lobby['seats'],
+      format: this.s.format ?? 'feud',
+      seats: this.s.seats.map((st) => (st ? { name: st.name, char: st.char, team: st.team ?? [st.char], palette: st.palette, ready: st.ready, connected: st.connected } : null)) as Lobby['seats'],
       host: this.s.host,
       spectators,
       phase: this.s.phase,
@@ -468,6 +487,7 @@ function fresh(): RoomState {
     stage: 'dojo',
     rounds: 2,
     timer: 60,
+    format: 'feud',
     seats: [null, null],
     host: 0,
     phase: 'lobby',

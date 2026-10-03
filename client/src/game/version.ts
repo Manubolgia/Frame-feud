@@ -31,7 +31,7 @@ function hash(s: string): string {
 }
 
 /** Bump when the engine's rules change (src/sim), not just its content. */
-const ENGINE_REV = 'ff3';
+const ENGINE_REV = 'ff4';
 
 export const SIM_VERSION = ENGINE_REV + '-' + hash(JSON.stringify(strip({ CHARACTERS, STAGES })));
 export const APP_VERSION = '2.1.0';

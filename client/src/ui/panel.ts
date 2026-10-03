@@ -105,6 +105,7 @@ export class ActionPanel {
     this.isOpen = true;
     this.root.classList.remove('hidden');
     this.root.classList.toggle('collapsed', this.collapsed);
+    this.root.classList.toggle('di', o.need === 'di');
     this.root.style.setProperty('--pc', hex(o.color));
     document.addEventListener('keydown', this.keyHandler);
     if (o.need === 'act') {
@@ -311,12 +312,39 @@ export class ActionPanel {
     const d = this.draft(m);
     const fi = frameInfo(m, this.def, d.amt);
     const kids: HTMLElement[] = [];
+    // Compact layouts show the key numbers inline and fold the rest behind (i).
+    const advC = (n: number | null) => (n === null ? '' : n >= 0 ? 'pos' : 'neg');
+    const mini = o.showFrames
+      ? el('div', {
+          cls: 'fd-mini',
+          kids: [
+            el('span', { html: `<i>Start</i><b>${fi.startup === null ? '—' : fi.startup + 'f'}</b>` }),
+            el('span', { cls: advC(fi.onHit), html: `<i>Hit</i><b>${fmtAdv(fi.onHit)}</b>` }),
+            el('span', { cls: advC(fi.onBlock), html: `<i>Block</i><b>${fmtAdv(fi.onBlock)}</b>` }),
+          ],
+        })
+      : null;
+    const info = el('button', {
+      cls: 'icon-btn small info-btn',
+      attrs: { type: 'button', 'aria-label': 'Move details', 'aria-expanded': this.root.classList.contains('show-info') },
+      html: icon('info', 17),
+      on: {
+        click: () => {
+          sfx.tap();
+          const on = this.root.classList.toggle('show-info');
+          info.setAttribute('aria-expanded', String(on));
+          this.onLayout();
+        },
+      },
+    });
     kids.push(
       el('div', {
         cls: 'detail-head',
         kids: [
           el('span', { cls: 'detail-ico', html: icon(m.icon, 26) }),
           el('div', { cls: 'detail-title', kids: [el('div', { cls: 'detail-name', text: m.name }), el('div', { cls: 'detail-cat', text: catLabel(m.cat) })] }),
+          mini,
+          info,
         ],
       }),
     );
@@ -473,7 +501,22 @@ export class ActionPanel {
     );
     const busy = this.o.state.fighters[1 - this.o.me];
     const oppBusy = busy.mode !== 'idle' && busy.mode !== 'down';
-    return el('div', { cls: 'ghost-ctrl', attrs: { title: 'Ghost preview' }, kids: [oppBusy ? null : pol, play] });
+    // one-tap version of the policy switch for small screens
+    const chip = el('button', {
+      cls: 'chip-btn pol-chip',
+      attrs: { type: 'button', title: 'What the preview assumes your opponent does' },
+      html: `<span>vs</span><b>${this.policy === 'wait' ? 'Wait' : 'Block'}</b>`,
+      on: {
+        click: () => {
+          sfx.tap();
+          this.policy = this.policy === 'wait' ? 'block' : 'wait';
+          chip.innerHTML = `<span>vs</span><b>${this.policy === 'wait' ? 'Wait' : 'Block'}</b>`;
+          this.renderTools();
+          this.emitPreview();
+        },
+      },
+    });
+    return el('div', { cls: 'ghost-ctrl', attrs: { title: 'Ghost preview' }, kids: [oppBusy ? null : pol, oppBusy ? null : chip, play] });
   }
 
   // ------------------------------------------------------------ DI --
@@ -503,7 +546,7 @@ export class ActionPanel {
       this.emitPreview();
     };
     const burstBtn = el('button', {
-      cls: 'toggle burst-toggle' + (this.burst ? ' on' : '') + (canBurst ? '' : ' disabled'),
+      cls: 'toggle burst-toggle di-burst' + (this.burst ? ' on' : '') + (canBurst ? '' : ' disabled'),
       attrs: { type: 'button', role: 'switch', 'aria-checked': this.burst },
       kids: [
         el('span', { cls: 'toggle-text', kids: [el('span', { cls: 'toggle-label', html: `${icon('burst', 16)} Burst` }), el('span', { cls: 'toggle-sub', text: canBurst ? 'Break the combo (uses full gauge)' : 'Not charged' })] }),
@@ -528,10 +571,9 @@ export class ActionPanel {
     this.detail.replaceChildren(
       el('div', { cls: 'detail-head', kids: [el('span', { cls: 'detail-ico', html: icon('airdash', 26) }), el('div', { cls: 'detail-title', kids: [el('div', { cls: 'detail-name', text: 'Directional influence' }), el('div', { cls: 'detail-cat', text: 'While in hitstun' })] })] }),
       el('p', { cls: 'detail-desc', text: 'Drag the pad to bend the knockback of the next hits. Leave it centred for none.' }),
-      burstBtn,
     );
     this.actions.replaceChildren(
-      el('div', { cls: 'params', kids: [el('div', { cls: 'param param-dir', kids: [el('span', { cls: 'param-label', text: 'DI direction' }), pad.root] })] }),
+      el('div', { cls: 'params', kids: [el('div', { cls: 'param param-dir', kids: [el('span', { cls: 'param-label', text: 'DI direction' }), pad.root] }), burstBtn] }),
       this.ghostRowDI(),
       this.lockBtn,
     );

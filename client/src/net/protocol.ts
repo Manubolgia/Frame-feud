@@ -11,6 +11,8 @@ import type { Decision, MatchConfig } from '../sim/types';
 export interface SeatInfo {
   name: string;
   char: string;
+  /** Family lineup (Family Feud): 1-3 fighters, lead first. */
+  team: string[];
   palette: number;
   ready: boolean;
   connected: boolean;
@@ -22,6 +24,8 @@ export interface Lobby {
   rounds: number;
   /** Seconds per decision, 0 = untimed. */
   timer: number;
+  /** 3v3 Family Feud or a 1v1 duel. */
+  format: 'feud' | 'duel';
   seats: [SeatInfo | null, SeatInfo | null];
   host: number;
   spectators: number;
@@ -31,8 +35,8 @@ export interface Lobby {
 
 export type ClientMsg =
   | { t: 'hello'; v: string; name: string; resume?: { id: string; token: string } }
-  | { t: 'pick'; char?: string; palette?: number; ready?: boolean }
-  | { t: 'host'; stage?: string; rounds?: number; timer?: number }
+  | { t: 'pick'; char?: string; team?: string[]; palette?: number; ready?: boolean }
+  | { t: 'host'; stage?: string; rounds?: number; timer?: number; format?: 'feud' | 'duel' }
   | { t: 'decide'; step: number; d: Decision }
   | { t: 'undecide'; step: number }
   | { t: 'hash'; step: number; h: string }

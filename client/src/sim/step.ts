@@ -7,7 +7,7 @@
  */
 
 import { abs, clamp, isqrt, len2, lerpI, px, sign, withLength } from './fixed';
-import { BURST_MAX, KO_TAIL, METER_MAX } from './state';
+import { BURST_MAX, isFeud, KO_TAIL, METER_MAX, teamOf } from './state';
 import type {
   CharacterDef,
   Decision,
@@ -197,10 +197,19 @@ export function stepFrame(st: GameState, ctx: SimCtx, ev: Ev) {
       st.wins[0]++;
       st.wins[1]++;
     } else st.wins[w]++;
-    const need = st.cfg.roundsToWin;
-    if (st.wins[0] >= need && st.wins[1] >= need) st.winner = -1;
-    else if (st.wins[0] >= need) st.winner = 0;
-    else if (st.wins[1] >= need) st.winner = 1;
+    if (isFeud(st.cfg)) {
+      // A side is out once every member of its family has been knocked out.
+      const out0 = st.wins[1] >= teamOf(st.cfg, 0).length;
+      const out1 = st.wins[0] >= teamOf(st.cfg, 1).length;
+      if (out0 && out1) st.winner = -1;
+      else if (out1) st.winner = 0;
+      else if (out0) st.winner = 1;
+    } else {
+      const need = st.cfg.roundsToWin;
+      if (st.wins[0] >= need && st.wins[1] >= need) st.winner = -1;
+      else if (st.wins[0] >= need) st.winner = 0;
+      else if (st.wins[1] >= need) st.winner = 1;
+    }
   }
   st.frame++;
 }

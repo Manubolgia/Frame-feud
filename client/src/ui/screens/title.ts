@@ -61,7 +61,7 @@ export function titleScreen(items: TitleItem[], onPick: (id: string) => void, on
             : null,
         ],
       }),
-      el('div', { cls: 'title-foot', kids: [el('span', { text: `v${APP_VERSION}` }), el('span', { text: 'A turn-based fighting game · simultaneous decisions, frame-perfect outcomes' })] }),
+      el('div', { cls: 'title-foot', kids: [el('span', { text: `v${APP_VERSION}` }), el('span', { text: 'A turn-based family feud · simultaneous decisions, frame-perfect outcomes' })] }),
     ],
   });
   window.setTimeout(() => (list.firstElementChild as HTMLElement | null)?.focus({ preventScroll: true }), 50);

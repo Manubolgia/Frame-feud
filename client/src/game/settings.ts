@@ -19,6 +19,10 @@ export interface Settings {
   stage: string;
   /** Characters + palettes last picked for each side. */
   lastPick: [string, string, number, number];
+  /** Match format for local modes: a 3v3 Family Feud or a 1v1 duel. */
+  format: 'feud' | 'duel';
+  /** Families last fielded by each side. */
+  lastFamilies: [string[], string[]];
   seenGuide: boolean;
 }
 
@@ -39,6 +43,11 @@ const DEFAULTS: Settings = {
   rounds: 2,
   stage: 'dojo',
   lastPick: ['razor', 'titan', 0, 0],
+  format: 'feud',
+  lastFamilies: [
+    ['razor', 'arc', 'titan'],
+    ['titan', 'grip', 'razor'],
+  ],
   seenGuide: false,
 };
 

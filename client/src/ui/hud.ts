@@ -19,6 +19,7 @@ interface Side {
   burst: HTMLElement;
   burstWrap: HTMLElement;
   pips: HTMLElement;
+  charEl: HTMLElement;
   combo: HTMLElement;
   comboHits: HTMLElement;
   comboDmg: HTMLElement;
@@ -35,6 +36,8 @@ export class Hud {
   private sides: Side[] = [];
   private roundEl = el('div', { cls: 'hud-round' });
   private endless = false;
+  /** Family Feud lineups (null outside a feud). */
+  private teams: [CharacterDef[], CharacterDef[]] | null = null;
   private stepEl = el('div', { cls: 'hud-step' });
   pauseBtn: HTMLButtonElement;
   onPause: () => void = () => {};
@@ -52,9 +55,10 @@ export class Hud {
     this.tagLayer.append(...this.tags);
   }
 
-  mount(cfg: MatchConfig, defs: [CharacterDef, CharacterDef], colors: [number, number], labels: [string, string]) {
+  mount(cfg: MatchConfig, defs: [CharacterDef, CharacterDef], colors: [number, number], labels: [string, string], teams: [CharacterDef[], CharacterDef[]] | null = null) {
     // training runs "first to 99": no pips, no round counter
-    this.endless = cfg.roundsToWin > 9;
+    this.endless = cfg.roundsToWin > 9 && !teams;
+    this.teams = teams;
     this.sides = [0, 1].map((i) => this.side(i, cfg.names[i], defs[i], colors[i], labels[i], cfg.roundsToWin));
     this.root.replaceChildren(
       this.sides[0].root,
@@ -80,7 +84,12 @@ export class Hud {
     const burst = el('div', { cls: 'burst-fill' });
     const burstWrap = el('div', { cls: 'burst', attrs: { title: 'Burst gauge' }, kids: [burst] });
     const pips = el('div', { cls: 'pips' });
-    if (!this.endless) for (let k = 0; k < rounds; k++) pips.append(el('span', { cls: 'pip' }));
+    const team = this.teams?.[i];
+    if (team) {
+      pips.classList.add('fam');
+      for (const d of team) pips.append(el('span', { cls: 'fam-chip', style: { '--fc': hex(color) }, text: d.name.slice(0, 3), attrs: { title: d.name } }));
+    } else if (!this.endless) for (let k = 0; k < rounds; k++) pips.append(el('span', { cls: 'pip' }));
+    const charEl = el('span', { cls: 'hud-char', text: def.name });
     const comboHits = el('div', { cls: 'combo-hits' });
     const comboDmg = el('div', { cls: 'combo-dmg' });
     const combo = el('div', { cls: `combo combo-${i}`, kids: [comboHits, comboDmg] });
@@ -94,7 +103,7 @@ export class Hud {
           kids: [
             el('span', { cls: 'hud-tagline', text: label }),
             el('span', { cls: 'hud-name', text: name }),
-            el('span', { cls: 'hud-char', text: def.name }),
+            charEl,
             pips,
           ],
         }),
@@ -105,15 +114,34 @@ export class Hud {
         }),
       ],
     });
-    return { root, hp, chip, hpNum, meter, meterNum, burst, burstWrap, pips, combo, comboHits, comboDmg, chipVal: 1, chipHold: 0, lastHp: def.hp, maxHp: def.hp, comboT: 0, lastCombo: 0 };
+    return { root, hp, chip, hpNum, meter, meterNum, burst, burstWrap, pips, charEl, combo, comboHits, comboDmg, chipVal: 1, chipHold: 0, lastHp: def.hp, maxHp: def.hp, comboT: 0, lastCombo: 0 };
   }
 
-  setRound(round: number, wins: [number, number], step: number) {
-    this.roundEl.textContent = this.endless ? 'Training' : `Round ${round}`;
+  setRound(round: number, wins: [number, number], step: number, members: [number, number] = [0, 0]) {
+    this.roundEl.textContent = this.endless ? 'Training' : this.teams ? `Bout ${round}` : `Round ${round}`;
     this.stepEl.textContent = `Turn ${step + 1}`;
     this.sides.forEach((s, i) => {
-      [...s.pips.children].forEach((p, k) => p.classList.toggle('won', k < wins[i]));
+      if (this.teams) {
+        // my knocked-out members = the other side's wins
+        const out = wins[1 - i];
+        [...s.pips.children].forEach((p, k) => {
+          p.classList.toggle('out', k < out);
+          p.classList.toggle('cur', k === members[i] && k >= out);
+        });
+      } else [...s.pips.children].forEach((p, k) => p.classList.toggle('won', k < wins[i]));
     });
+  }
+
+  /** A new family member steps in for side i. */
+  setFighter(i: number, def: CharacterDef, color: number, max = def.hp) {
+    const s = this.sides[i];
+    if (!s) return;
+    s.charEl.textContent = def.name;
+    s.root.style.setProperty('--pc', hex(color));
+    s.combo.style.setProperty('--pc', hex(color));
+    s.maxHp = max;
+    s.lastHp = Math.min(s.lastHp, max);
+    s.chipVal = 1;
   }
 
   /** Per-frame update from the fighter snapshots. `combo` is the hits the

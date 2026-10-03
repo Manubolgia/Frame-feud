@@ -1,8 +1,10 @@
 # Frame Feud
 
-A 1v1 turn-based fighting game in the style of *Your Only Move Is Hustle*.
-Both players pick a move in secret, lock in, and the exchange plays out frame
-by frame until one of them can act again. No reflexes, only reads.
+A turn-based fighting game in the style of *Your Only Move Is Hustle*, played
+as a **family feud**: each side fields a family of up to three fighters, and
+when one goes down the next steps in. Both players pick a move in secret, lock
+in, and the exchange plays out frame by frame until one of them can act again.
+No reflexes, only reads.
 
 **Play:** https://manubolgia.github.io/Frame-feud/ (also in the
 [MNBG Tape Library](https://github.com/manubolgia/mnbglibrary)).
@@ -12,6 +14,25 @@ offline against the CPU or a friend on the same device. Online play needs the
 small Cloudflare Worker in `worker/`.
 
 ---
+
+## Family Feud
+
+The default format. Each player builds a family of one to three fighters
+(repeats allowed) in the order they'll fight, and the family gets a colour that
+dresses every member.
+
+- A bout is one fighter from each family. Fighters enter at 60% of their
+  normal health, so a full feud lasts about as long as a best-of-three duel.
+- A knocked-out fighter is out for the match; the next member of that family
+  steps in at full health.
+- The winner of a bout stays in with the damage they took, healing 20% of what
+  they're missing, and keeps their meter.
+- The feud ends when a whole family is down. A one-member family can take on
+  three; it just has no one to tag in.
+
+The HUD shows both lineups (fallen members are crossed out) and each bout opens
+with its matchup. **Duel** (1v1, best of N rounds) is one tap away on the
+select screen, in the online lobby and in replays.
 
 ## How a turn works
 
@@ -76,26 +97,31 @@ and online play always match.
 | **GRIP**, *The Iron Clinch* | Grappler | 1250 | A suplex, a long-reach piledriver, a grabbing bull rush, a body-splash leap and an armored headbutt. Turns every block into a guessing game. |
 
 Each fighter has around twelve moves of their own on top of the shared
-movement, defence and wake-up options, plus four colour palettes. Every move
-has a keyframed animation, and hits get effects and sounds that fit the move.
+movement, defence and wake-up options. Every move has a keyframed animation
+with anticipation, impact and follow-through, and its hitboxes ride the limb
+that strikes: a kick hits where the foot is on every active frame, a sweep
+hits low, a launcher catches the chin and carries upward. Hits get effects and
+sounds that fit the move.
 
 **Stages:** Dawn Dojo, Neon Rooftop, Skyforge and Training Lab. Each has
 parallax layers, ambient motion, walls and a ceiling.
 
 ## Modes
 
+Every mode below plays as a Family Feud or as a Duel.
+
 - **Versus CPU** with Easy, Normal and Hard. The CPU plays out the likely
   exchanges for each pick, builds a payoff table and mixes its choices, so it
   can't be beaten by repeating one thing.
 - **Local versus.** Two players on one device; a hand-off screen hides each
   pick from the other player.
-- **Online.** Room codes, a lobby with fighter picks, rounds and a turn timer,
+- **Online.** Room codes, a lobby with family picks, format, rounds and a turn timer,
   spectators, reconnection mid-match and rematches.
 - **Training.** Dummy set to stand, block, jump, parry or CPU; refill health,
   infinite meter, hitbox display, reset and swap sides.
 - **Replays.** Recent matches are saved locally and can be rewatched with
   pause, speed and restart controls.
-- **How to play.** A seven-page illustrated guide.
+- **How to play.** An eight-page illustrated guide.
 
 ## Controls
 
@@ -114,6 +140,11 @@ The panel works with touch, mouse and keyboard:
 
 The settings cover master, music and effect volume, playback speed, ghost,
 frame data and hitboxes, screen shake and reduced motion.
+
+**On a phone** the panel docks compactly under the arena: categories and moves
+in a thumb-sized grid, frame data folded behind an info button, the ghost
+controls in one chip and the lock button always in reach. The camera frames
+the fight in whatever space the panel leaves, in portrait and landscape.
 
 ---
 
@@ -138,10 +169,23 @@ node scripts/gen-icons.mjs  # regenerate PNG icons from public/favicon.svg
 
 Two dev-only pages help with content work (served by `npm run dev`):
 
-- `/Frame-feud/dev/poses.html?char=razor`: every move of a fighter, frame by
-  frame, for animation work.
-- `/Frame-feud/dev/arena.html`: the arena renderer on its own, for stages and
-  effects.
+- `/Frame-feud/dev/poses.html`: a sheet of key poses for the whole roster.
+  `?char=razor&rows=all` shows every move of a fighter as a row of key frames
+  (`rows=slash,sweep` for a few), `?char=razor&strip=slash` one move frame by
+  frame with its hitboxes.
+- `/Frame-feud/dev/arena.html?a=razor&b=titan&stage=dojo&hb`: the arena
+  renderer with two CPUs, for stages and effects.
+
+**Hitboxes follow the animation.** A hitbox tagged with a `bone` (`fHand`,
+`fFoot`, `tip`...) doesn't use a fixed offset: its position on every active
+frame is baked from the pose into `src/content/hitpos.ts`. After changing a
+pose or a move's timing, re-bake it:
+
+```bash
+npx vite-node scripts/bake.ts          # rewrite src/content/hitpos.ts
+npx vite-node scripts/bake.ts --check  # fail if it's out of date (also a test)
+npx vite-node scripts/audit.ts         # every move vs a dummy at several ranges
+```
 
 ### Online play locally
 
@@ -231,9 +275,12 @@ it to catch up. A resume token keeps the seat across reconnects, the room's
 alarm runs the turn timer and disconnect forfeits, and a client running a
 different build (`SIM_VERSION`) is turned away with a prompt to reload.
 
-**Rendering.** Fighters are forward-kinematic skeletons posed from per-move
-keyframes, with planted feet, verlet cloth (scarves, hoods), outlines and
-per-character kits. Effects (hit sparks, rings, trails, debris, slow motion,
+**Rendering.** Fighters are forward-kinematic skeletons (a curved spine,
+shoulders, elbows, wrists, hips, knees and feet) posed from per-move keyframes,
+painted in layers (ink outline, fill, shading toward the light, costume
+details) with planted feet, squash and stretch, verlet cloth (scarves, coat
+tails, hair) and a costume per fighter: RAZOR's wraps and blade, TITAN's armour
+plates, ARC's coat and hat, GRIP's mask and boots. Effects (hit sparks, rings, trails, debris, slow motion,
 screen shake) and a camera that frames both fighters are layered on top. A
 canvas-2D backend of the same drawing code renders the character portraits.
 

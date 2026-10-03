@@ -20,6 +20,8 @@ export class Portrait {
   facing: 1 | -1;
   /** Move animation to loop instead of idling. */
   move: string | null = null;
+  /** Explicit [main, trim, glow] (family colours) instead of a palette. */
+  colors: [number, number, number] | null = null;
 
   constructor(char: string, palette: number, facing: 1 | -1 = 1, cls = 'portrait') {
     this.canvas = document.createElement('canvas');
@@ -31,10 +33,11 @@ export class Portrait {
     this.facing = facing;
   }
 
-  set(char: string, palette: number) {
+  set(char: string, palette: number, colors: [number, number, number] | null = null) {
     if (char !== this.char) this.cloth = {};
     this.char = char;
     this.palette = palette;
+    this.colors = colors;
     this.draw();
   }
 
@@ -70,7 +73,7 @@ export class Portrait {
     x.clearRect(0, 0, w, h);
     const def = CHARACTERS[this.char];
     if (!def) return;
-    const pal = def.palettes[this.palette % def.palettes.length];
+    const pal = this.colors ?? def.palettes[this.palette % def.palettes.length];
     // a raised fist needs headroom above the figure
     const scale = (h * (this.pose === 'victory' && !this.move ? 0.62 : 0.74)) / 128;
     const floor = h * 0.92;

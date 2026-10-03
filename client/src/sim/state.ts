@@ -19,6 +19,30 @@ export const METER_BAR = 1000;
 export const METER_MAX = 3000;
 export const BURST_MAX = 1000;
 
+/** Max fighters in a family. */
+export const MAX_FAMILY = 3;
+/** Share of lost health a bout winner gets back before the next bout. */
+export const BOUT_HEAL_PCT = 20;
+/** Family Feud fighters start at this share of their health, so a match of
+ *  three bouts each runs about as long as a two-round duel. */
+export const FEUD_HP_PCT = 60;
+
+/** A fighter's full health in this match. */
+export function maxHp(cfg: MatchConfig, def: CharacterDef): number {
+  return isFeud(cfg) ? Math.trunc((def.hp * FEUD_HP_PCT) / 100) : def.hp;
+}
+
+/** A side's lineup (a single fighter outside Family Feud). */
+export function teamOf(cfg: MatchConfig, i: number): string[] {
+  const t = cfg.teams?.[i];
+  return t && t.length ? t : [cfg.chars[i]];
+}
+
+/** Family Feud: lineups and knock-outs instead of rounds. */
+export function isFeud(cfg: MatchConfig): boolean {
+  return !!cfg.teams && (teamOf(cfg, 0).length > 1 || teamOf(cfg, 1).length > 1);
+}
+
 export function newFighter(def: CharacterDef, side: 0 | 1, meter = 0): Fighter {
   return {
     char: def.id,
@@ -50,16 +74,27 @@ export function newFighter(def: CharacterDef, side: 0 | 1, meter = 0): Fighter {
 }
 
 export function createMatch(cfg: MatchConfig, ctx: SimCtx): GameState {
-  const a = ctx.chars[cfg.chars[0]];
-  const b = ctx.chars[cfg.chars[1]];
+  const teams = cfg.teams ? ([cfg.teams[0].slice(0, MAX_FAMILY), cfg.teams[1].slice(0, MAX_FAMILY)] as [string[], string[]]) : undefined;
+  const lead: [string, string] = [teams?.[0][0] ?? cfg.chars[0], teams?.[1][0] ?? cfg.chars[1]];
+  const a = ctx.chars[lead[0]];
+  const b = ctx.chars[lead[1]];
   if (!a || !b) throw new Error('unknown character');
+  for (const t of teams ?? []) for (const c of t) if (!ctx.chars[c]) throw new Error('unknown character');
+  const c: MatchConfig = { ...cfg, chars: lead, palettes: [cfg.palettes[0], cfg.palettes[1]], names: [cfg.names[0], cfg.names[1]] };
+  if (teams) c.teams = teams;
+  else delete c.teams;
+  const f0 = newFighter(a, 0);
+  const f1 = newFighter(b, 1);
+  f0.hp = maxHp(c, a);
+  f1.hp = maxHp(c, b);
   return {
-    cfg: { ...cfg, chars: [cfg.chars[0], cfg.chars[1]], palettes: [cfg.palettes[0], cfg.palettes[1]], names: [cfg.names[0], cfg.names[1]] },
+    cfg: c,
     frame: 0,
     step: 0,
     round: 1,
     wins: [0, 0],
-    fighters: [newFighter(a, 0), newFighter(b, 1)],
+    members: [0, 0],
+    fighters: [f0, f1],
     projs: [],
     nextId: 1,
     ko: null,
@@ -73,10 +108,34 @@ export function createMatch(cfg: MatchConfig, ctx: SimCtx): GameState {
 export function startNextRound(s: GameState, ctx: SimCtx): GameState {
   const n = cloneState(s);
   if (!n.roundOver || n.winner !== null) return n;
-  const a = ctx.chars[n.cfg.chars[0]];
-  const b = ctx.chars[n.cfg.chars[1]];
   const stats = [n.fighters[0].stats, n.fighters[1].stats];
-  n.fighters = [newFighter(a, 0, n.fighters[0].meter), newFighter(b, 1, n.fighters[1].meter)];
+  if (isFeud(n.cfg)) {
+    // The fallen fighter's next family member steps in fresh; the bout
+    // winner stays, keeps its meter and wounds, and catches its breath.
+    const next: Fighter[] = [];
+    for (const i of [0, 1] as const) {
+      const old = n.fighters[i];
+      const team = teamOf(n.cfg, i);
+      if (old.hp <= 0 || old.mode === 'ko') {
+        n.members[i] = Math.min(team.length - 1, n.members[i] + 1);
+        const def = ctx.chars[team[n.members[i]]];
+        const f = newFighter(def, i, old.meter);
+        f.hp = maxHp(n.cfg, def);
+        next.push(f);
+      } else {
+        const def = ctx.chars[old.char];
+        const full = maxHp(n.cfg, def);
+        const f = newFighter(def, i, old.meter);
+        f.hp = Math.min(full, old.hp + Math.trunc(((full - old.hp) * BOUT_HEAL_PCT) / 100));
+        next.push(f);
+      }
+    }
+    n.fighters = [next[0], next[1]];
+  } else {
+    const a = ctx.chars[n.cfg.chars[0]];
+    const b = ctx.chars[n.cfg.chars[1]];
+    n.fighters = [newFighter(a, 0, n.fighters[0].meter), newFighter(b, 1, n.fighters[1].meter)];
+  }
   n.fighters[0].stats = stats[0];
   n.fighters[1].stats = stats[1];
   n.projs = [];
@@ -94,6 +153,7 @@ export function cloneState(s: GameState): GameState {
     step: s.step,
     round: s.round,
     wins: [s.wins[0], s.wins[1]],
+    members: [s.members[0], s.members[1]],
     fighters: [cloneFighter(s.fighters[0]), cloneFighter(s.fighters[1])],
     projs: s.projs.map((p) => ({ ...p })),
     nextId: s.nextId,
@@ -134,12 +194,15 @@ export function hashState(s: GameState): string {
   push(s.round);
   push(s.wins[0]);
   push(s.wins[1]);
+  push(s.members[0]);
+  push(s.members[1]);
   push(s.roundOver ? 1 : 0);
   push(s.winner ?? -9);
   push(s.ko ? s.ko.at : -1);
   push(s.ko ? s.ko.winner : -9);
   push(s.nextId);
   for (const f of s.fighters) {
+    str(f.char);
     push(f.x); push(f.y); push(f.vx); push(f.vy); push(f.facing); push(f.grounded ? 1 : 0);
     push(f.hp); push(f.meter); push(f.burst); push(f.airJumps); push(f.airDashes);
     push(MODES.indexOf(f.mode)); push(f.stun); push(f.hitlag); push(f.invuln);
@@ -172,6 +235,7 @@ export function snapFighter(f: Fighter, ctx: SimCtx): FighterSnap {
   const def = m ? ctx.chars[f.char].moves[m.id] : undefined;
   const mf = m ? m.frame : 0;
   return {
+    char: f.char,
     x: f.x,
     y: f.y,
     vx: f.vx,

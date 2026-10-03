@@ -2,9 +2,21 @@
  *  waiting notices and toasts. */
 
 import { sfx } from '../audio/audio';
+import { CHARACTERS } from '../content/roster';
 import { hex } from '../render/color';
 import { el } from './dom';
 import { icon } from './icons';
+import { Portrait } from './portrait';
+
+/** One side of a Family Feud bout card. */
+export interface VsSide {
+  /** Player name ("You", "CPU", an online name). */
+  who: string;
+  team: string[];
+  /** Index of the fighter stepping in; earlier members are out. */
+  member: number;
+  colors: [number, number, number];
+}
 
 export class Banner {
   root = el('div', { cls: 'banner-layer', attrs: { 'aria-live': 'polite' } });
@@ -32,6 +44,55 @@ export class Banner {
           e.remove();
           resolve();
         }, 260);
+      }, ms);
+    });
+  }
+
+  /** Family Feud bout card: both fighters stepping in, their families below. */
+  versus(title: string, sides: [VsSide, VsSide], ms = 1500): Promise<void> {
+    return new Promise((resolve) => {
+      const ports: Portrait[] = [];
+      const side = (i: 0 | 1) => {
+        const s = sides[i];
+        const char = s.team[Math.min(s.member, s.team.length - 1)];
+        const p = new Portrait(char, 0, i === 0 ? 1 : -1, 'vs-portrait');
+        p.colors = s.colors;
+        ports.push(p);
+        return el('div', {
+          cls: `vs-side ${i ? 'r' : 'l'}`,
+          style: { '--pc': hex(s.colors[0]), '--pg': hex(s.colors[2]) },
+          kids: [
+            el('div', { cls: 'vs-plate' }),
+            p.canvas,
+            el('div', {
+              cls: 'vs-info',
+              kids: [
+                el('div', { cls: 'vs-char', text: CHARACTERS[char]?.name ?? char }),
+                el('div', { cls: 'vs-who', text: s.who }),
+                el('div', {
+                  cls: 'vs-fam',
+                  kids: s.team.map((c, k) =>
+                    el('span', { cls: `vs-pip${k < s.member ? ' out' : k === s.member ? ' on' : ''}`, text: (CHARACTERS[c]?.name ?? c).slice(0, 3) }),
+                  ),
+                }),
+              ],
+            }),
+          ],
+        });
+      };
+      const card = el('div', {
+        cls: 'vs-card',
+        kids: [side(0), el('div', { cls: 'vs-mid', kids: [el('div', { cls: 'vs-title', text: title }), el('div', { cls: 'vs-x', text: 'VS' })] }), side(1)],
+      });
+      this.root.append(card);
+      for (const p of ports) p.start();
+      window.setTimeout(() => {
+        card.classList.add('out');
+        window.setTimeout(() => {
+          for (const p of ports) p.stop();
+          card.remove();
+          resolve();
+        }, 300);
       }, ms);
     });
   }
@@ -91,7 +152,7 @@ export class Banner {
   }
 
   clear() {
-    this.root.querySelectorAll('.call, .gate').forEach((e) => e.remove());
+    this.root.querySelectorAll('.call, .gate, .vs-card').forEach((e) => e.remove());
     this.setStatus(null);
   }
 }

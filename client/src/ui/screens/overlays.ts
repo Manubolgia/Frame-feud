@@ -1,7 +1,7 @@
 /** Settings, pause menu, move list, results, and the replay / training bars. */
 
 import { sfx } from '../../audio/audio';
-import { CHARACTERS } from '../../content/roster';
+import { CHARACTERS, colorsFor, familyName } from '../../content/roster';
 import type { DummyMode } from '../../game/drivers';
 import { saveSettings, settings } from '../../game/settings';
 import type { GameState, MatchConfig } from '../../sim/types';
@@ -217,10 +217,20 @@ export function resultsScreen(
   const w = st.winner ?? -1;
   const ports: Portrait[] = [];
   const side = (i: number) => {
-    const p = new Portrait(cfg.chars[i], cfg.palettes[i], i === 0 ? 1 : -1, 'res-portrait');
+    const ch = st.fighters[i].char;
+    const p = new Portrait(ch, cfg.palettes[i], i === 0 ? 1 : -1, 'res-portrait');
+    p.colors = colorsFor(cfg, i, ch, st.fighters[1 - i].char);
     p.pose = w === -1 ? 'idle' : w === i ? 'victory' : 'ko';
     ports.push(p);
-    return el('div', { cls: `res-side ${w === i ? 'won' : w === -1 ? '' : 'lost'}`, style: { '--pc': hex(colors[i]) }, kids: [p.canvas, el('div', { cls: 'res-name', text: cfg.names[i] }), el('div', { cls: 'res-char', text: CHARACTERS[cfg.chars[i]].name })] });
+    const team = cfg.teams?.[i];
+    // knocked-out members of side i = the other side's wins
+    const fam = team
+      ? el('div', {
+          cls: 'res-fam',
+          kids: team.map((c, k) => el('span', { cls: 'fam-chip' + (k < st.wins[1 - i] ? ' out' : k === st.members[i] ? ' cur' : ''), style: { '--fc': hex(colors[i]) }, text: CHARACTERS[c].name })),
+        })
+      : null;
+    return el('div', { cls: `res-side ${w === i ? 'won' : w === -1 ? '' : 'lost'}`, style: { '--pc': hex(colors[i]) }, kids: [p.canvas, el('div', { cls: 'res-name', text: cfg.names[i] }), el('div', { cls: 'res-char', text: team ? familyName(cfg.names[i]) : CHARACTERS[ch].name }), fam] });
   };
   const stat = (label: string, a: number | string, b: number | string) => el('div', { cls: 'res-stat', kids: [el('span', { text: String(a) }), el('span', { cls: 'res-k', text: label }), el('span', { text: String(b) })] });
   const [A, B] = st.fighters.map((f) => f.stats);
@@ -249,7 +259,7 @@ export function resultsScreen(
             cls: 'res-stats',
             kids: [
               el('div', { cls: 'res-score', text: `${st.wins[0]} – ${st.wins[1]}` }),
-              el('div', { cls: 'res-sub', text: `${st.step} turns · ${st.round} round${st.round === 1 ? '' : 's'}` }),
+              el('div', { cls: 'res-sub', text: `${st.step} turn${st.step === 1 ? '' : 's'} · ${st.round} ${cfg.teams ? 'bout' : 'round'}${st.round === 1 ? '' : 's'}` }),
               stat('Damage dealt', A.dealt, B.dealt),
               stat('Hits landed', A.hits, B.hits),
               stat('Longest combo', A.bestCombo, B.bestCombo),

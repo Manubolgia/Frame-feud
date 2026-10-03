@@ -74,11 +74,15 @@ export class StageView {
   private mid = new Container();
   private farG = new Graphics();
   private midG = new Graphics();
+  /** Stars and nebulae across the whole screen. */
   private sun = new Graphics();
+  /** The sun or moon, drawn around (0, 0) and placed over the fight area. */
+  private orb = new Graphics();
   private motes: Mote[] = [];
   private time = 0;
   private lastW = 0;
   private lastH = 0;
+  private lastOrb = 0;
 
   constructor(def: StageDef) {
     this.def = def;
@@ -86,7 +90,7 @@ export class StageView {
     this.sky.texture = gradientTexture(this.theme.sky);
     this.far.addChild(this.farG);
     this.mid.addChild(this.midG);
-    this.back.addChild(this.sky, this.sun, this.far, this.mid);
+    this.back.addChild(this.sky, this.sun, this.orb, this.far, this.mid);
     this.buildFar();
     this.buildMid();
     this.buildWorld();
@@ -122,59 +126,75 @@ export class StageView {
     if (W !== this.lastW || H !== this.lastH) {
       this.lastW = W;
       this.lastH = H;
-      this.drawSun(W, H);
+      this.drawSky(W, H);
       if (this.motes.length === 0) this.seedMotes(W, H);
     }
-    // the sun / moon drifts a touch with the camera
-    this.sun.x = -cam.x * t.s * 0.03;
-    this.sun.y = -(cam.y + 160) * t.s * 0.03;
+    // The sun / moon sits over the fight area (not the whole screen, which on
+    // a phone is half panel), low over the horizon, drifting with the camera.
+    const orbR = Math.round(Math.min(cam.bandW, cam.bandH) * (this.def.theme === 'dojo' ? 0.12 : 0.07));
+    if (orbR !== this.lastOrb) {
+      this.lastOrb = orbR;
+      this.drawOrb(orbR);
+    }
+    const dx = -cam.x * t.s * 0.03;
+    const dy = -(cam.y + 160) * t.s * 0.03;
+    this.sun.x = dx;
+    this.sun.y = dy;
+    if (this.def.theme === 'dojo') {
+      this.orb.x = cam.band.left + cam.bandW * 0.3 + dx;
+      this.orb.y = Math.max(cam.band.top + orbR * 1.5, floorY - cam.bandH * 0.36) + dy;
+    } else {
+      this.orb.x = cam.band.left + cam.bandW * 0.78 + dx;
+      this.orb.y = cam.band.top + Math.max(orbR * 2, cam.bandH * 0.18) + dy;
+    }
   }
 
   // ---------------------------------------------------------- sky --
 
-  private drawSun(W: number, H: number) {
+  private drawSky(W: number, H: number) {
     const g = this.sun;
     g.clear();
     const R = rng(7);
     switch (this.def.theme) {
-      case 'dojo': {
-        const x = W * 0.3;
-        const y = H * 0.56;
-        const r = Math.min(W, H) * 0.12;
-        for (let i = 6; i >= 1; i--) g.circle(x, y, r * (1 + i * 0.35)).fill({ color: 0xffd7a0, alpha: 0.05 });
-        g.circle(x, y, r).fill({ color: 0xfff1cf, alpha: 0.95 });
-        // streaky clouds across the sun
-        for (let i = 0; i < 5; i++) {
-          const cy = y - r * 0.6 + i * r * 0.32;
-          g.roundRect(x - r * (1.6 + R()), cy, r * (2.4 + R() * 1.4), r * 0.09, r * 0.05).fill({ color: 0xc8607a, alpha: 0.35 });
-        }
-        break;
-      }
-      case 'rooftop': {
+      case 'rooftop':
         for (let i = 0; i < 180; i++) {
           const sx = R() * W;
           const sy = R() * H * 0.6;
           g.circle(sx, sy, R() < 0.1 ? 1.4 : 0.8).fill({ color: 0xffffff, alpha: 0.25 + R() * 0.6 });
         }
-        const x = W * 0.78;
-        const y = H * 0.2;
-        const r = Math.min(W, H) * 0.07;
-        for (let i = 5; i >= 1; i--) g.circle(x, y, r * (1 + i * 0.5)).fill({ color: 0x9ab4ff, alpha: 0.04 });
-        g.circle(x, y, r).fill({ color: 0xeef3ff });
-        g.circle(x - r * 0.3, y - r * 0.15, r * 0.22).fill({ color: 0xc9d4ef, alpha: 0.8 });
-        g.circle(x + r * 0.25, y + r * 0.3, r * 0.15).fill({ color: 0xc9d4ef, alpha: 0.8 });
         break;
-      }
-      case 'forge': {
+      case 'forge':
         for (let i = 0; i < 120; i++) g.circle(R() * W, R() * H * 0.5, R() * 1.2 + 0.4).fill({ color: 0xffd6ff, alpha: 0.2 + R() * 0.5 });
         // nebula
         for (let i = 0; i < 9; i++) {
           g.ellipse(W * (0.15 + R() * 0.7), H * (0.12 + R() * 0.3), W * (0.12 + R() * 0.2), H * (0.05 + R() * 0.08)).fill({ color: R() < 0.5 ? 0xff5fd2 : 0x6b5cff, alpha: 0.06 });
         }
         break;
-      }
-      case 'lab':
+    }
+  }
+
+  private drawOrb(r: number) {
+    const g = this.orb;
+    g.clear();
+    const R = rng(7);
+    switch (this.def.theme) {
+      case 'dojo': {
+        for (let i = 6; i >= 1; i--) g.circle(0, 0, r * (1 + i * 0.35)).fill({ color: 0xffd7a0, alpha: 0.05 });
+        g.circle(0, 0, r).fill({ color: 0xfff1cf, alpha: 0.95 });
+        // streaky clouds across the sun
+        for (let i = 0; i < 5; i++) {
+          const cy = -r * 0.6 + i * r * 0.32;
+          g.roundRect(-r * (1.6 + R()), cy, r * (2.4 + R() * 1.4), r * 0.09, r * 0.05).fill({ color: 0xc8607a, alpha: 0.35 });
+        }
         break;
+      }
+      case 'rooftop': {
+        for (let i = 5; i >= 1; i--) g.circle(0, 0, r * (1 + i * 0.5)).fill({ color: 0x9ab4ff, alpha: 0.04 });
+        g.circle(0, 0, r).fill({ color: 0xeef3ff });
+        g.circle(-r * 0.3, -r * 0.15, r * 0.22).fill({ color: 0xc9d4ef, alpha: 0.8 });
+        g.circle(r * 0.25, r * 0.3, r * 0.15).fill({ color: 0xc9d4ef, alpha: 0.8 });
+        break;
+      }
     }
   }
 

@@ -8,14 +8,14 @@
  */
 
 import { setIntensity, sfx } from '../audio/audio';
-import { CHARACTERS, ctxFor } from '../content/roster';
+import { CHARACTERS, colorsFor, ctxFor, familyName } from '../content/roster';
 import type { Arena, GhostView } from '../render/arena';
 import { ghost, resolve, type GhostPolicy, type MatchLog } from '../sim/resolve';
 import { canAct, needsInput } from '../sim/rules';
-import { createMatch, hashState, snapshot, startNextRound } from '../sim/state';
+import { createMatch, hashState, isFeud, maxHp, snapshot, startNextRound, teamOf } from '../sim/state';
 import { firstActive } from '../sim/step';
 import type { Decision, GameState, MatchConfig, SimCtx, SimEvent, Snapshot } from '../sim/types';
-import type { Banner } from '../ui/banner';
+import type { Banner, VsSide } from '../ui/banner';
 import type { Hud } from '../ui/hud';
 import type { ActionPanel } from '../ui/panel';
 import { settings } from './settings';
@@ -111,14 +111,35 @@ export class Match {
     this.loop();
   }
 
+  /** The character on the floor for side i right now. */
+  charOf(i: number): string {
+    return this.state.fighters[i].char;
+  }
+
+  get feud(): boolean {
+    return isFeud(this.cfg);
+  }
+
   mountHud() {
     const cfg = this.cfg;
-    const defs: [typeof CHARACTERS.razor, typeof CHARACTERS.razor] = [CHARACTERS[cfg.chars[0]], CHARACTERS[cfg.chars[1]]];
+    const defs: [typeof CHARACTERS.razor, typeof CHARACTERS.razor] = [CHARACTERS[this.charOf(0)], CHARACTERS[this.charOf(1)]];
     const colors: [number, number] = [this.ui.arena.palette(0)[0], this.ui.arena.palette(1)[0]];
-    this.ui.hud.mount(cfg, defs, colors, this.labels);
-    this.ui.hud.resetBars([defs[0].hp, defs[1].hp]);
-    this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step);
+    const teams = this.feud ? ([teamOf(cfg, 0).map((c) => CHARACTERS[c]), teamOf(cfg, 1).map((c) => CHARACTERS[c])] as [typeof defs[0][], typeof defs[0][]]) : null;
+    this.ui.hud.mount(cfg, defs, colors, this.labels, teams);
+    this.ui.hud.resetBars([maxHp(cfg, defs[0]), maxHp(cfg, defs[1])]);
+    this.syncHud();
     this.ui.layout();
+  }
+
+  /** Bring the HUD up to date with the fighters on the floor. */
+  private syncHud() {
+    const s = snapshot(this.state, this.ctx);
+    this.ui.arena.syncChars(s);
+    for (const i of [0, 1]) {
+      const def = CHARACTERS[this.charOf(i)];
+      this.ui.hud.setFighter(i, def, this.ui.arena.palette(i)[0], maxHp(this.cfg, def));
+    }
+    this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step, this.state.members);
   }
 
   /** Jump to a later state without playback (online resume). */
@@ -131,8 +152,7 @@ export class Match {
     }
     const s = snapshot(this.state, this.ctx);
     this.disp = { a: s, b: s, t: 0 };
-    this.ui.hud.resetBars([CHARACTERS[this.cfg.chars[0]].hp, CHARACTERS[this.cfg.chars[1]].hp]);
-    this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step);
+    this.syncHud();
   }
 
   abort() {
@@ -179,7 +199,7 @@ export class Match {
       await this.play(r.frames, r.events);
       if (!this.alive) return;
       this.state = r.end;
-      this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step);
+      this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step, this.state.members);
       if (this.state.roundOver) {
         this.phase = 'between';
         await this.roundEnd();
@@ -189,8 +209,7 @@ export class Match {
         const s2 = snapshot(this.state, this.ctx);
         this.disp = { a: s2, b: s2, t: 0 };
         this.ui.arena.frame(s2, false, this.wide);
-        this.ui.hud.resetBars([CHARACTERS[this.cfg.chars[0]].hp, CHARACTERS[this.cfg.chars[1]].hp]);
-        this.ui.hud.setRound(this.state.round, this.state.wins, this.state.step);
+        this.syncHud();
         await this.roundIntro();
       }
     }
@@ -241,9 +260,21 @@ export class Match {
   private async roundIntro() {
     if (this.mode === 'attract') return;
     const b = this.ui.banner;
-    const final = this.state.wins[0] === this.cfg.roundsToWin - 1 && this.state.wins[1] === this.cfg.roundsToWin - 1;
     sfx.round();
-    await b.call(final ? 'Final round' : `Round ${this.state.round}`, { ms: 900, cls: 'call-round' });
+    if (this.feud) {
+      const last = (i: number) => this.state.wins[1 - i] === teamOf(this.cfg, i).length - 1;
+      const title = last(0) && last(1) ? 'Final bout' : `Bout ${this.state.round}`;
+      const side = (i: 0 | 1): VsSide => ({
+        who: this.cfg.names[i],
+        team: teamOf(this.cfg, i),
+        member: this.state.members[i],
+        colors: colorsFor(this.cfg, i, this.charOf(i), this.charOf(1 - i)),
+      });
+      await b.versus(title, [side(0), side(1)], settings.reducedMotion ? 1200 : 1600);
+    } else {
+      const final = this.state.wins[0] === this.cfg.roundsToWin - 1 && this.state.wins[1] === this.cfg.roundsToWin - 1;
+      await b.call(final ? 'Final round' : `Round ${this.state.round}`, { ms: 900, cls: 'call-round' });
+    }
     if (!this.alive) return;
     sfx.fight();
     await b.call('Fight!', { ms: 520, cls: 'call-fight' });
@@ -261,12 +292,18 @@ export class Match {
       await b.call('Double K.O.', { ms: 1300, cls: 'call-ko' });
       return;
     }
-    const def = CHARACTERS[this.cfg.chars[w]];
-    const perfect = st.fighters[w].hp === def.hp;
+    const def = CHARACTERS[this.charOf(w)];
+    const perfect = st.fighters[w].hp === maxHp(this.cfg, def);
     this.victor = w;
     if (st.winner !== null) {
       sfx.win();
-      await b.call(`${this.cfg.names[w]} wins`, { sub: perfect ? 'Perfect' : def.title, color: this.ui.arena.palette(w)[0], ms: 1800, cls: 'call-win' });
+      const sub = this.feud ? `${familyName(this.cfg.names[1 - w])} is out` : perfect ? 'Perfect' : def.title;
+      await b.call(`${this.cfg.names[w]} wins`, { sub, color: this.ui.arena.palette(w)[0], ms: 1800, cls: 'call-win' });
+    } else if (this.feud) {
+      const l = 1 - w;
+      const team = teamOf(this.cfg, l);
+      const nextChar = team[Math.min(team.length - 1, this.state.members[l] + 1)];
+      await b.call(`${CHARACTERS[this.charOf(l)].name} is out`, { sub: `${CHARACTERS[nextChar].name} steps in for ${this.cfg.names[l]}`, color: this.ui.arena.palette(w)[0], ms: 1500, cls: 'call-roundwin' });
     } else {
       await b.call(`${this.cfg.names[w]} takes round ${st.round}`, { sub: perfect ? 'Perfect' : undefined, color: this.ui.arena.palette(w)[0], ms: 1400, cls: 'call-roundwin' });
     }
@@ -352,7 +389,7 @@ export class Match {
         this.ui.banner.call('K.O.', { ms: 1100, cls: 'call-ko' });
         break;
       case 'whiff': {
-        const m = CHARACTERS[this.cfg.chars[e.i]].moves[e.move];
+        const m = CHARACTERS[this.ui.arena.charOf(e.i)].moves[e.move];
         sfx.whiff((m?.hitboxes?.[0]?.dmg ?? 0) > 70);
         break;
       }
@@ -378,7 +415,7 @@ export class Match {
         sfx.feint();
         break;
       case 'move': {
-        const m = CHARACTERS[this.cfg.chars[e.i]].moves[e.move];
+        const m = CHARACTERS[this.ui.arena.charOf(e.i)].moves[e.move];
         if (m?.superFlash) {
           sfx.super();
           this.ui.banner.call(m.name, { ms: 700, cls: 'call-super', color: this.ui.arena.palette(e.i)[0] });

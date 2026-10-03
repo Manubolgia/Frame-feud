@@ -55,6 +55,13 @@ export class App {
     this.gameLayer.append(this.hud.root, this.hud.tagLayer, this.banner.root, this.panel.root);
     document.body.append(this.gameLayer, this.screens, this.modal);
     this.panel.onLayout = () => this.layoutSoon();
+    this.panel.root.addEventListener('animationend', () => this.layoutSoon());
+    // the panel grows and shrinks with the pick (aim pads, frame data, feint)
+    if (typeof ResizeObserver !== 'undefined') {
+      const ro = new ResizeObserver(() => this.layoutSoon());
+      ro.observe(this.panel.root);
+      ro.observe(this.hud.root);
+    }
     this.hud.onPause = () => this.pause();
 
     pixi.ticker.add((t) => this.frame(Math.min(0.05, t.deltaMS / 1000)));
@@ -92,14 +99,21 @@ export class App {
     let top = 8;
     let bottom = H - 8;
     let right = W;
-    const hudR = this.hud.root.classList.contains('hidden') ? null : this.hud.root.getBoundingClientRect();
-    if (hudR && hudR.height) top = hudR.bottom + 6;
-    const pr = this.panel.root.classList.contains('hidden') ? null : this.panel.root.getBoundingClientRect();
-    if (pr && pr.height) {
-      const side = pr.left > W * 0.35 && pr.top < H * 0.3;
+    // offsets give the resting box, ignoring any slide-in transform
+    const hud = this.hud.root;
+    if (!hud.classList.contains('hidden') && hud.offsetHeight) {
+      const hudB = hud.offsetTop + hud.offsetHeight;
+      top = hudB + 6;
+      // the sideways dock starts under the HUD, whatever its height
+      document.documentElement.style.setProperty('--hud-b', `${hudB}px`);
+    }
+    // Measure the panel's resting box (offsets ignore its slide-in transform).
+    const pe = this.panel.root;
+    if (!pe.classList.contains('hidden') && pe.offsetHeight) {
+      const side = pe.offsetLeft > W * 0.35 && pe.offsetTop < H * 0.3;
       if (side) {
-        if (pr.height > H * 0.4) right = pr.left - 4;
-      } else bottom = pr.top - 4;
+        if (pe.offsetHeight > H * 0.4) right = pe.offsetLeft - 4;
+      } else bottom = pe.offsetTop - 4;
     }
     const rb = this.replayCtl?.root.getBoundingClientRect();
     if (rb && rb.height) bottom = Math.min(bottom, rb.top - 4);
@@ -191,11 +205,11 @@ export class App {
     this.startAttract();
     this.layoutSoon();
     const items = [
-      { id: 'cpu', label: 'Versus CPU', sub: 'Fight the computer at three skill levels', icon: 'cpu' },
-      { id: 'local', label: 'Local versus', sub: 'Two players on one device — picks stay secret', icon: 'users' },
+      { id: 'cpu', label: 'Versus CPU', sub: 'Your family against a CPU family, three skill levels', icon: 'cpu' },
+      { id: 'local', label: 'Local versus', sub: 'Two families on one device — picks stay secret', icon: 'users' },
       { id: 'online', label: 'Online', sub: WS_URL ? 'Room codes · play a friend anywhere' : 'Not set up in this build', icon: 'globe', disabled: !WS_URL },
       { id: 'training', label: 'Training', sub: 'Dummy, hitboxes and infinite meter', icon: 'target' },
-      { id: 'guide', label: 'How to play', sub: 'Frames, reads and the ghost in seven pages', icon: 'book' },
+      { id: 'guide', label: 'How to play', sub: 'Families, frames, reads and the ghost', icon: 'book' },
       { id: 'replays', label: 'Replays', sub: 'Watch your recent matches', icon: 'replay', disabled: loadReplays().length === 0 },
       { id: 'settings', label: 'Settings', sub: 'Sound, speed, comfort, controls', icon: 'gear' },
     ];
@@ -302,8 +316,8 @@ export class App {
             return el('button', {
               cls: 'replay-item',
               attrs: { type: 'button' },
-              html: `<span class="ri-text"><span class="ri-vs"><b>${esc(c.names[0])}</b> <i>${CHARACTERS[c.chars[0]]?.name ?? ''}</i> <span class="ri-x">vs</span> <b>${esc(c.names[1])}</b> <i>${CHARACTERS[c.chars[1]]?.name ?? ''}</i></span>
-                <span class="ri-meta">${new Date(r.at).toLocaleString()} · ${r.log.steps.length} turns · ${w === null ? 'unfinished' : w < 0 ? 'draw' : `${esc(c.names[w])} won`}</span></span>
+              html: `<span class="ri-text"><span class="ri-vs"><b>${esc(c.names[0])}</b> <i>${famText(c, 0)}</i> <span class="ri-x">vs</span> <b>${esc(c.names[1])}</b> <i>${famText(c, 1)}</i></span>
+                <span class="ri-meta">${new Date(r.at).toLocaleString()} · ${r.log.steps.length} turn${r.log.steps.length === 1 ? '' : 's'} · ${w === null ? 'unfinished' : w < 0 ? 'draw' : `${esc(c.names[w])} won`}</span></span>
                 <span class="ri-play">${icon('play', 14)}<span>Watch</span></span>`,
               on: { click: () => this.startReplay(r.log) },
             });
@@ -485,8 +499,8 @@ export class App {
     const me = m.mode === 'online' ? Math.max(0, this.session?.seat ?? 0) : m.planning >= 0 ? m.planning : 0;
     const items = [
       { id: 'resume', label: 'Resume', icon: 'play' },
-      { id: 'moves', label: `Move list · ${CHARACTERS[m.cfg.chars[me]].name}`, icon: 'list' },
-      ...(m.mode === 'local' || m.mode === 'cpu' ? [{ id: 'moves2', label: `Move list · ${CHARACTERS[m.cfg.chars[1 - me]].name}`, icon: 'list' }] : []),
+      { id: 'moves', label: `Move list · ${CHARACTERS[m.charOf(me)].name}`, icon: 'list' },
+      ...(m.mode === 'local' || m.mode === 'cpu' ? [{ id: 'moves2', label: `Move list · ${CHARACTERS[m.charOf(1 - me)].name}`, icon: 'list' }] : []),
       { id: 'guide', label: 'How to play', icon: 'book' },
       { id: 'settings', label: 'Settings', icon: 'gear' },
       ...(m.mode === 'cpu' || m.mode === 'local' || m.mode === 'training' ? [{ id: 'restart', label: 'Restart match', icon: 'replay' }] : []),
@@ -502,7 +516,7 @@ export class App {
           case 'moves':
           case 'moves2': {
             const i = id === 'moves' ? me : 1 - me;
-            const ml = moveList(m.cfg.chars[i], m.cfg.palettes[i], () => {
+            const ml = moveList(m.charOf(i), m.cfg.palettes[i], () => {
               this.closeModal();
               this.pause();
             });
@@ -597,8 +611,9 @@ export class App {
     this.leaveOnline();
     const handlers = {
       pick: (char: string, palette: number) => this.session?.net.send({ t: 'pick', char, palette }),
+      team: (team: string[], palette: number) => this.session?.net.send({ t: 'pick', team, palette }),
       ready: (r: boolean) => this.session?.net.send({ t: 'pick', ready: r }),
-      host: (p: { stage?: string; rounds?: number; timer?: number }) => this.session?.net.send({ t: 'host', ...p }),
+      host: (p: { stage?: string; rounds?: number; timer?: number; format?: 'feud' | 'duel' }) => this.session?.net.send({ t: 'host', ...p }),
       leave: () => this.showTitle(),
       moves: (c: string, p: number) => this.showMoves(c, p),
     };
@@ -726,3 +741,9 @@ function makeCode(): string {
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 export { inLibrary };
+
+/** "RAZOR" or, for a family, "RAZOR · ARC · TITAN". */
+function famText(c: MatchConfig, i: number): string {
+  const t = c.teams?.[i] ?? [c.chars[i]];
+  return t.map((id) => CHARACTERS[id]?.name ?? '').join(' · ');
+}

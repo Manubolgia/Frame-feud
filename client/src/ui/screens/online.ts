@@ -1,7 +1,7 @@
 /** Online entry (create / join a room) and the room lobby. */
 
 import { sfx } from '../../audio/audio';
-import { CHARACTERS, ROSTER, STAGES, STAGE_LIST } from '../../content/roster';
+import { CHARACTERS, colorsFor, FAMILY_COLORS, ROSTER, STAGES, STAGE_LIST } from '../../content/roster';
 import type { Lobby } from '../../net/protocol';
 import { hex } from '../../render/color';
 import { el } from '../dom';
@@ -80,8 +80,10 @@ export function onlineEntry(
 
 export interface LobbyHandlers {
   pick: (char: string, palette: number) => void;
+  /** Set the whole family lineup (and its colours). */
+  team: (team: string[], palette: number) => void;
   ready: (r: boolean) => void;
-  host: (p: { stage?: string; rounds?: number; timer?: number }) => void;
+  host: (p: { stage?: string; rounds?: number; timer?: number; format?: 'feud' | 'duel' }) => void;
   leave: () => void;
   moves: (char: string, palette: number) => void;
 }
@@ -93,6 +95,8 @@ export class LobbyScreen {
   private status = el('div', { cls: 'lobby-status' });
   private ports: [Portrait, Portrait] = [new Portrait('razor', 0, 1, 'lobby-portrait'), new Portrait('titan', 0, -1, 'lobby-portrait')];
   private lobby: Lobby | null = null;
+  /** Family slot being edited. */
+  private slot = 0;
 
   constructor(
     private seat: number,
@@ -154,29 +158,59 @@ export class LobbyScreen {
       if (!s) {
         return el('div', { cls: 'seat empty', kids: [el('div', { cls: 'seat-wait', html: `<span class="spin"></span><span>Waiting for a challenger…</span>` }), el('p', { cls: 'muted small', text: `Share the code ${l.code}` })] });
       }
-      const def = CHARACTERS[s.char] ?? CHARACTERS.razor;
-      p.set(s.char, s.palette);
+      const feud = l.format !== 'duel';
+      const team = feud ? (s.team?.length ? s.team : [s.char]) : [s.char];
       const mine = i === me && l.phase === 'lobby';
+      if (!mine || !feud) this.slot = Math.min(this.slot, team.length - 1);
+      const shown = mine && feud ? team[Math.min(this.slot, team.length - 1)] : team[0];
+      const def = CHARACTERS[shown] ?? CHARACTERS.razor;
+      const palettes: [number, number] = [l.seats[0]?.palette ?? 0, l.seats[1]?.palette ?? 0];
+      const cols = (c: string) => colorsFor({ teams: feud ? [[], []] : undefined, palettes }, i, c, l.seats[1 - i]?.char);
+      p.set(shown, s.palette, cols(shown));
       const card = el('div', {
         cls: `seat side-${i}` + (mine ? ' mine' : '') + (s.ready ? ' ready' : ''),
-        style: { '--pc': hex(def.palettes[s.palette % 4][0]) },
+        style: { '--pc': hex(cols(shown)[0]) },
         kids: [
           el('div', { cls: 'seat-head', kids: [el('span', { cls: 'seat-name', text: s.name + (i === me ? ' (you)' : '') }), el('span', { cls: 'seat-badge ' + (s.connected ? (s.ready ? 'ok' : 'wait') : 'off'), text: !s.connected ? 'Offline' : s.ready ? 'Ready' : i === l.host ? 'Host' : 'Choosing' })] }),
           p.canvas,
           el('div', { cls: 'seat-char', kids: [el('b', { text: def.name }), el('span', { text: ` · ${def.archetype}` })] }),
+          feud
+            ? el('div', {
+                cls: 'seat-fam',
+                kids: team.map((c, k) =>
+                  el(mine ? 'button' : 'span', {
+                    cls: 'fam-chip' + (mine && k === this.slot ? ' cur' : ''),
+                    attrs: mine ? { type: 'button', title: `Edit slot ${k + 1}` } : {},
+                    style: { '--fc': hex(cols(c)[0]) },
+                    text: `${k + 1} ${CHARACTERS[c]?.name ?? ''}`,
+                    on: mine ? { click: () => { sfx.tap(); this.slot = k; this.render(l); } } : {},
+                  }),
+                ),
+              })
+            : null,
         ],
       });
       if (mine) {
+        const setChar = (id: string) => {
+          sfx.select();
+          if (!feud) return this.h.pick(id, s.palette % 4);
+          const t = team.slice();
+          while (t.length < 3) t.push(t[t.length - 1]);
+          t[this.slot] = id;
+          if (this.slot < 2) this.slot++;
+          this.h.team(t, s.palette);
+        };
+        const options = feud ? FAMILY_COLORS.map((f) => f.c) : def.palettes;
         card.append(
           el('div', {
             cls: 'roster-strip small',
             kids: ROSTER.map((id) =>
               el('button', {
-                cls: 'roster-pill' + (id === s.char ? ' on' : ''),
+                cls: 'roster-pill' + (id === shown ? ' on' : ''),
                 attrs: { type: 'button' },
                 style: { '--rc': hex(CHARACTERS[id].color) },
                 text: CHARACTERS[id].name,
-                on: { click: () => { sfx.select(); this.h.pick(id, 0); } },
+                on: { click: () => setChar(id) },
               }),
             ),
           }),
@@ -185,16 +219,16 @@ export class LobbyScreen {
             kids: [
               el('div', {
                 cls: 'swatches',
-                kids: def.palettes.map((pal, k) =>
+                kids: options.map((pal, k) =>
                   el('button', {
                     cls: 'swatch' + (k === s.palette ? ' on' : ''),
-                    attrs: { type: 'button', 'aria-label': `Colour ${k + 1}` },
+                    attrs: { type: 'button', 'aria-label': feud ? `${FAMILY_COLORS[k].name} family` : `Colour ${k + 1}` },
                     style: { background: `linear-gradient(135deg, ${hex(pal[0])} 50%, ${hex(pal[1])} 50%)` },
-                    on: { click: () => { sfx.tap(); this.h.pick(s.char, k); } },
+                    on: { click: () => { sfx.tap(); if (feud) this.h.team(team, k); else this.h.pick(s.char, k); } },
                   }),
                 ),
               }),
-              el('button', { cls: 'btn ghost small', attrs: { type: 'button' }, html: `${icon('list', 16)}<span>Moves</span>`, on: { click: () => this.h.moves(s.char, s.palette) } }),
+              el('button', { cls: 'btn ghost small', attrs: { type: 'button' }, html: `${icon('list', 16)}<span>Moves</span>`, on: { click: () => this.h.moves(shown, s.palette) } }),
             ],
           }),
         );
@@ -218,8 +252,26 @@ export class LobbyScreen {
         }),
         el('div', {
           cls: 'opt-inline',
-          kids: [el('span', { cls: 'opt-label', text: 'Rounds' }), isHost ? segmented<number>([{ v: 1, label: '1' }, { v: 2, label: '2' }, { v: 3, label: '3' }], l.rounds, (v) => this.h.host({ rounds: v })) : el('b', { text: String(l.rounds) })],
+          kids: [
+            el('span', { cls: 'opt-label', text: 'Format' }),
+            isHost
+              ? segmented<'feud' | 'duel'>(
+                  [
+                    { v: 'feud', label: 'Family 3v3' },
+                    { v: 'duel', label: 'Duel' },
+                  ],
+                  l.format ?? 'feud',
+                  (v) => this.h.host({ format: v }),
+                )
+              : el('b', { text: l.format === 'duel' ? 'Duel' : 'Family 3v3' }),
+          ],
         }),
+        l.format === 'duel'
+          ? el('div', {
+              cls: 'opt-inline',
+              kids: [el('span', { cls: 'opt-label', text: 'Rounds' }), isHost ? segmented<number>([{ v: 1, label: '1' }, { v: 2, label: '2' }, { v: 3, label: '3' }], l.rounds, (v) => this.h.host({ rounds: v })) : el('b', { text: String(l.rounds) })],
+            })
+          : null,
         el('div', {
           cls: 'opt-inline',
           kids: [
